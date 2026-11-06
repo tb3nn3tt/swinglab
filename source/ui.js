@@ -317,10 +317,17 @@ function drawLive(k, W, H) {
 }
 
 /* ---------------- demo + library sources ---------------- */
-const proRecs = {};
-function proRecord(kind) {
-  if (!proRecs[kind]) { const s = buildPro(kind), r = analyzeMotion(s, kind); proRecs[kind] = packRecord(s, r, { id: 'pro:' + kind, name: 'Pro model', player: 'Pro model', heightIn: 72, createdAt: 0, hand: 'R' }); }
-  return proRecs[kind];
+const modelRecs = {};
+function modelRecord(kind, key = 'pro') {
+  const ck = kind + ':' + key, m = MODELS[key];
+  if (!m || !m.kinds.includes(kind)) return null;
+  if (!modelRecs[ck]) { const s = buildModel(kind, key), r = analyzeMotion(s, kind); modelRecs[ck] = packRecord(s, r, { id: 'model:' + key, name: m.label, player: m.label.replace(/ style$/, ''), heightIn: 72, createdAt: 0, hand: m.lefty ? 'L' : 'R', model: key }); }
+  return modelRecs[ck];
+}
+const proRecord = kind => modelRecord(kind, 'pro');
+function modelOptions(kind, selId) {
+  const keys = Object.keys(MODELS).filter(k => MODELS[k].kinds.includes(kind));
+  return `<optgroup label="Models">` + keys.map(k => `<option value="model:${k}" ${selId === 'model:' + k ? 'selected' : ''}>${esc(MODELS[k].label)}${k === 'faults' ? ' (' + MODE[kind].noun + ')' : ''}</option>`).join('') + `</optgroup>`;
 }
 function loadDemo() {
   pause();
@@ -603,6 +610,7 @@ function renderReport() {
   ${cmp ? `<div class="card">
     <div class="eyebrow">Compared with</div>
     <h2>${esc(st.compareRec.name)}</h2>
+    ${st.compareRec.model && MODELS[st.compareRec.model] ? `<p class="muted small" style="margin-bottom:8px">${esc(MODELS[st.compareRec.model].blurb)}${MODELS[st.compareRec.model].lefty ? ' A style model built from well-documented traits of his swing, not motion capture. Shown facing the same way as your hitter.' : ''}</p>` : ''}
     <p class="small ${offs.length ? '' : 'muted'}" style="margin-bottom:10px">${offs.length ? `${offs.length} check${offs.length > 1 ? 's are' : ' is'} out of line with that rep: ${offs.slice(0, 3).map(o => esc(o.label.toLowerCase())).join(', ')}.` : `Nothing is out of line with that rep. Your ${M.noun} matches.`}</p>
     <div class="tbl"><table class="delta"><thead><tr><th>Check</th><th style="text-align:right">Then</th><th style="text-align:right">Now</th><th style="text-align:right">Change</th></tr></thead><tbody>
     ${cmp.map(c => `<tr class="${c.big ? 'big' : c.off ? 'off' : ''}"><td>${esc(c.label)}</td><td class="num">${fmtShort(c.then, c.unit)}</td><td class="num">${fmtShort(c.now, c.unit)}</td><td class="num">${fmtNum(c.delta, c.unit) > 0 ? '+' : ''}${fmtShort(c.delta, c.unit)}</td></tr>`).join('')}
@@ -656,7 +664,7 @@ function renderReport() {
     <label class="check" style="margin-top:10px"><input type="checkbox" id="saveBase" ${baselineFor(kind) ? '' : 'checked'}> Make this my baseline ${M.noun}</label>
     <p class="note" style="margin-top:6px">Saves the skeleton, phases and numbers. The video stays on your phone.${store.kind === 'local' ? ' Saved on this device.' : ''}</p>`}
     <div class="opt" style="margin-top:14px"><label for="cmpSel">Compare with</label>
-      <select id="cmpSel" style="flex:1;min-width:0"><option value="">Nothing</option><option value="pro:${kind}" ${st.compareRec && st.compareRec.id === 'pro:' + kind ? 'selected' : ''}>Pro model</option>${recOpts.map(x => `<option value="${esc(x.id)}" ${st.compareRec && st.compareRec.id === x.id ? 'selected' : ''}>${esc(x.name)}${st.prefs['base_' + kind] === x.id ? ' ★' : ''} · ${x.overall}</option>`).join('')}</select>
+      <select id="cmpSel" style="flex:1;min-width:0"><option value="">Nothing</option>${modelOptions(kind, st.compareRec && st.compareRec.id)}${recOpts.map(x => `<option value="${esc(x.id)}" ${st.compareRec && st.compareRec.id === x.id ? 'selected' : ''}>${esc(x.name)}${st.prefs['base_' + kind] === x.id ? ' ★' : ''} · ${x.overall}</option>`).join('')}</select>
     </div>
     ${!recOpts.length ? `<p class="note" style="margin-top:6px">Save a few ${M.nouns} to compare against them here.</p>` : ''}
   </div>
@@ -830,7 +838,7 @@ $('report').addEventListener('click', async e => {
   }
 });
 $('report').addEventListener('change', e => {
-  if (e.target.id === 'cmpSel') { st.compareRec = e.target.value.startsWith('pro:') ? proRecord(st.mode) : st.records.find(r => r.id === e.target.value) || null; prepCompare(); st.layers.past = true; document.querySelector('[data-layer="past"]').setAttribute('aria-pressed', 'true'); setStageMeta(); renderReport(); draw(); }
+  if (e.target.id === 'cmpSel') { st.compareRec = e.target.value.startsWith('model:') ? modelRecord(st.mode, e.target.value.slice(6)) : st.records.find(r => r.id === e.target.value) || null; prepCompare(); st.layers.past = true; document.querySelector('[data-layer="past"]').setAttribute('aria-pressed', 'true'); setStageMeta(); renderReport(); draw(); }
 });
 document.addEventListener('click', async e => {
   const t = e.target.closest('[data-tab]'); if (t) { setTab(t.dataset.tab); return; }

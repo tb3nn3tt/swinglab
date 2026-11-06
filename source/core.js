@@ -128,7 +128,12 @@ function rotationSeries(frames, fps, a, b, refEnd) {
   const w = frames.map(f => Math.abs(f[a*2]-f[b*2]));
   const w0 = Math.max(1e-3, percentile(w.slice(0, Math.max(2, refEnd)), 0.9));
   const mi = argmin(w, Math.max(0, Math.floor(refEnd*0.5)), w.length-1);
-  const th = w.map((v, i) => { const t = Math.acos(clamp(v/w0, 0, 1))*DEG; return i > mi ? 180 - t : t; });
+  // width alone can't tell a coil (turned away from the pitcher) from opening, so use the order of events:
+  // anything before the last moment the segment is square again (widest, just before the big turn) is coil → negative
+  const ws = gauss1d(w, 1.5); let pk = mi; while (pk > 0 && ws[pk-1] >= ws[pk] - 1e-6) pk--; // walk back from the big turn to the square moment
+  let cmin = Infinity; for (let i = 0; i < pk; i++) cmin = Math.min(cmin, ws[i]);
+  if (!(cmin < 0.96*ws[pk])) pk = 0; // no real coil before it
+  const th = w.map((v, i) => { const t = Math.acos(clamp(v/w0, 0, 1))*DEG; return i > mi ? 180 - t : i < pk ? -t : t; });
   const sm = gauss1d(th, 1.0);
   return { angle: sm, speed: gauss1d(deriv(sm, fps).map(Math.abs), 0.8) };
 }
@@ -310,7 +315,7 @@ function analyzeMotion(seq, kind) {
 
     /* ---- rotation: not opening early, not over-rotating ---- */
     const torsoFP = kin.torsoAngle[FP], torsoC = kin.torsoAngle[C];
-    add({ key: 'earlyOpen', label: 'Shoulders closed at foot plant', value: torsoFP, unit: '°', lo: 0, hi: 30, tol: 15, weight: 1, phase: 'Foot plant',
+    add({ key: 'earlyOpen', label: 'Shoulders closed at foot plant', value: torsoFP, unit: '°', lo: -60, hi: 30, tol: 15, weight: 1, phase: 'Foot plant',
       high: 'Your shoulders are already turning when the front foot lands. Opening early drags the barrel and takes away the outside pitch.', drillHigh: 'Stride drill: land with your front shoulder pointed at the pitcher and hold for a beat before you swing.', fix: null });
     add({ key: 'overRot', label: 'Shoulder turn at contact', value: torsoC, unit: '°', lo: 55, hi: 120, tol: 20, weight: 0.9, phase: 'Contact',
       high: 'Over-rotating: the shoulders spin well past square at contact, so the front side pulls off the ball.', low: 'Shoulders barely turn by contact. You are swinging with the arms instead of the body.',
@@ -444,4 +449,4 @@ function addBatSpeed(seq) {
   seq.batOk = ok > 0.55;
 }
 
-if (typeof module !== 'undefined') module.exports = { NJ, JN, sideMap, cleanRaw, normalize, toPixel, solveBat, detectPhases, analyzeMotion, packRecord, seqFromRecord, alignIndex, lerpFrame, compareRecords, buildDemo, buildPro, buildFaulty, addBatSpeed, NA, angAt, P, mid, gauss1d, deriv, speedSeries };
+if (typeof module !== 'undefined') module.exports = { NJ, JN, sideMap, cleanRaw, normalize, toPixel, solveBat, detectPhases, analyzeMotion, packRecord, seqFromRecord, alignIndex, lerpFrame, compareRecords, buildDemo, buildPro, buildFaulty, buildModel, MODELS, addBatSpeed, NA, angAt, P, mid, gauss1d, deriv, speedSeries };

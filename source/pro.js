@@ -49,29 +49,33 @@ function poseFrom(p) {
   const f2 = new Float32Array(34); J.forEach((q, j) => { f2[j*2] = q[0]; f2[j*2+1] = -q[1]; });
   return { f: f2, J };
 }
-function proKeys(kind, faults) {
+function proKeys(kind, faults, style) {
   const F = faults || {};
   if (kind === 'hit') {
     // stance 0–0.5, load to 0.85, stride lands 0.95, launch 1.00, contact 1.15, extension 1.23, finish to 1.75
-    const TFP = 0.95, TC = 1.15;
-    const front = F.overstride ? 0.52 : 0.33;
-    return { T: 1.85, fps: 60,
-      pelvis: curve([[0, [0, 0.50, 0]], [0.5, [0, 0.50, 0]], [0.82, [-0.03, 0.495, 0]], [TFP, [0.03, 0.47 - (F.headDrop ? 0.02 : 0), 0]], [TC, [0.075, 0.468 - (F.headDrop ? 0.06 : 0), 0.01]], [1.4, [0.09, 0.47, 0]], [1.85, [0.08, 0.49, 0]]]),
+    // In the stance the barrel is tipped toward the pitcher over the back shoulder, knob pointing down toward the catcher.
+    const S = { stanceHalf: 0.15, stride: 0.18, kick: 0.03, crouch: 0, bend: 22, coil: -26, handsY: 0.80, handsX: -0.14, handsZ: 0.10, loadBack: 0.07,
+      batAz: 25, batEl: 52, depth: 0, extEl: -5, finishEl: 18, batLen: 0.40, finishRot: 158, tiltC: 20, ...(style || {}) };
+    const TFP = 0.95, TC = 1.15, sh = S.stanceHalf, front = sh + (F.overstride ? S.stride + 0.19 : S.stride), cy = S.crouch, hy = S.handsY - cy, d = S.depth;
+    return { T: 1.85, fps: 60, batLen: S.batLen,
+      pelvis: curve([[0, [0, 0.50 - cy, 0]], [0.5, [0, 0.50 - cy, 0]], [0.82, [-0.03, 0.495 - cy, 0]], [TFP, [0.03 + (front - sh - 0.18)*0.35, 0.47 - cy - (F.headDrop ? 0.02 : 0), 0]], [TC, [0.075 + (front - sh - 0.18)*0.4 + d*0.3, 0.468 - cy - (F.headDrop ? 0.06 : 0), 0.01]], [1.4, [0.09 + (front - sh - 0.18)*0.4, 0.47 - cy, 0]], [1.85, [0.08 + (front - sh - 0.18)*0.4, 0.49 - cy, 0]]]),
       pelvisRot: curve([[0, 0], [0.5, 0], [0.84, -12], [TFP, 6], [1.04, 42], [1.10, 66], [TC, 80], [1.3, 98], [1.85, 104]]),
       torsoRot: curve(F.earlyOpen ? [[0, -4], [0.5, -6], [0.8, -14], [TFP, 32], [1.02, 55], [1.08, 78], [TC, 105], [1.3, 148], [1.85, 160]]
-        : [[0, -4], [0.5, -6], [0.84, -26], [TFP, -22], [1.01, -6], [1.07, 30], [1.11, 62], [TC, 86], [1.3, 140], [1.85, 158]]),
-      tiltBack: curve([[0, 4], [0.84, 6], [TFP, 9], [TC, 20 - (F.headDrop ? 6 : 0)], [1.4, 16], [1.85, 10]]),
-      tiltZ: curve([[0, 22], [TFP, 24], [TC, 26 + (F.headDrop ? 14 : 0)], [1.5, 18], [1.85, 14]]),
+        : [[0, -4], [0.5, -6], [0.84, S.coil], [TFP, S.coil + 4], [0.985, (S.coil + 4)*0.45], [1.02, 8], [1.06, 45], [1.10, 72], [TC, 86], [1.3, 140], [1.85, S.finishRot]]),
+      tiltBack: curve([[0, 4], [0.84, 6], [TFP, 9], [TC, S.tiltC - (F.headDrop ? 6 : 0)], [1.4, 16], [1.85, 10]]),
+      tiltZ: curve([[0, S.bend], [TFP, S.bend + 2], [TC, S.bend + 4 + (F.headDrop ? 14 : 0)], [1.5, 18], [1.85, 14]]),
       shTilt: curve([[0, 2], [0.84, 4], [TFP, 4], [TC, -14], [1.4, 10], [1.85, 14]]),
       headYaw: curve([[0, 82], [TC, 86], [1.4, 84], [1.85, 70]]), headDown: curve([[0, 8], [TFP, 10], [TC, 18], [1.35, 16], [1.85, 6]]),
-      lAnkle: curve([[0, [0.15, 0.045, -0.02]], [0.5, [0.15, 0.045, -0.02]], [0.78, [0.11, 0.075, -0.03]], [0.88, [front - 0.05, 0.07, -0.02]], [TFP, [front, 0.045, -0.02]], [1.85, [front, 0.045, -0.02]]]),
-      bAnkle: curve([[0, [-0.15, 0.045, 0]], [TFP, [-0.15, 0.045, 0]], [TC, [-0.135 + (F.backSlide ? 0.09 : 0), 0.07, 0.01]], [1.4, [-0.11 + (F.backSlide ? 0.09 : 0), 0.09, 0.02]], [1.85, [-0.1 + (F.backSlide ? 0.09 : 0), 0.09, 0.02]]]),
+      lAnkle: curve([[0, [sh, 0.045, -0.02]], [0.5, [sh, 0.045, -0.02]], [0.78, [sh - 0.04, 0.045 + S.kick, -0.03]], [0.88, [front - 0.05, 0.05 + S.kick*0.6, -0.02]], [TFP, [front, 0.045, -0.02]], [1.85, [front, 0.045, -0.02]]]),
+      bAnkle: curve([[0, [-sh, 0.045, 0]], [TFP, [-sh, 0.045, 0]], [TC, [-sh + 0.015 + (F.backSlide ? 0.09 : 0), 0.07, 0.01]], [1.4, [-sh + 0.04 + (F.backSlide ? 0.09 : 0), 0.09, 0.02]], [1.85, [-sh + 0.05 + (F.backSlide ? 0.09 : 0), 0.09, 0.02]]]),
       lKneePole: curve([[0, [0.1, 0, 1]], [0.84, [-0.5, 0, 1]], [TFP, [0.3, 0, 1]], [1.85, [0.6, 0, 0.6]]]), bKneePole: curve([[0, [-0.1, 0, 1]], [TC, [0.6, 0, 0.8]], [1.85, [0.8, 0, 0.4]]]),
-      grip: curve([[0, [-0.14, 0.80, 0.10]], [0.5, [-0.14, 0.80, 0.10]], [0.84, [-0.21, 0.80, 0.07]], [TFP, [-0.21, 0.79, 0.07]], [1.01, [-0.19, 0.76, 0.09]],
-        [1.08, F.cast ? [-0.02, 0.70, 0.30] : [-0.07, 0.69, 0.16]], [TC, [0.08, 0.63, 0.20]], [1.23, [0.22, 0.65, 0.12]], [1.4, [0.10, 0.84, -0.12]], [1.85, [0.0, 0.88, -0.16]]]),
-      batAz: curve([[0, 197], [0.5, 197], [0.84, 205], [TFP, 210], [1.02, 206], [1.08, 160], [TC, 92], [1.23, 15], [1.4, -95], [1.85, -140]]),
-      batEl: curve(F.dump ? [[0, 58], [0.84, 50], [TFP, 44], [1.02, 5], [1.08, -38], [TC, -18], [1.23, -6], [1.4, 18], [1.85, 34]]
-        : [[0, 58], [0.84, 50], [TFP, 45], [1.02, 30], [1.08, 6], [TC, -14], [1.23, -5], [1.4, 18], [1.85, 34]]),
+      grip: curve([[0, [S.handsX, hy, S.handsZ]], [0.5, [S.handsX, hy, S.handsZ]], [0.84, [S.handsX - S.loadBack, hy, S.handsZ - 0.03]], [TFP, [S.handsX - S.loadBack, hy - 0.01, S.handsZ - 0.03]], [1.01, [S.handsX - S.loadBack + 0.02, hy - 0.04, S.handsZ - 0.01]],
+        [1.045, F.cast ? [-0.15 + d*0.5, 0.74 - cy, 0.16] : [(S.handsX - S.loadBack + 0.02)*0.5 + (-0.09 + d)*0.5, (hy - 0.04)*0.5 + (0.70 - cy)*0.5, 0.1]],
+        [1.08, F.cast ? [-0.08 + d, 0.71 - cy, 0.30] : [-0.09 + d, 0.70 - cy, 0.145]], [TC, [0.08 + d, 0.63 - cy, 0.20]], [1.23, [0.22 + d, 0.65 - cy, 0.12]], [1.4, [0.10, 0.84 - cy*0.5, -0.12]], [1.85, [0.0, 0.88 - cy*0.5, -0.16]]]),
+      // barrel direction: azimuth in the ground plane (0 = toward the pitcher, 90 = over the plate) and elevation
+      batAz: curve([[0, S.batAz], [0.5, S.batAz], [0.84, S.batAz + 8], [TFP, S.batAz + 20], [0.99, 120], [1.04, 196], [1.08, 160], [TC, 92], [1.23, 15], [1.4, -95], [1.85, -140]]),
+      batEl: curve(F.dump ? [[0, S.batEl], [0.84, S.batEl + 3], [TFP, S.batEl + 8], [0.99, 62], [1.04, 48], [1.09, -28], [TC, -22], [1.23, -6], [1.4, 18], [1.85, 34]]
+        : [[0, S.batEl], [0.84, S.batEl + 3], [TFP, S.batEl + 8], [0.99, 66], [1.04, 34], [1.08, 6], [TC, -14], [1.23, S.extEl], [1.4, S.finishEl], [1.85, S.finishEl + 16]]),
       lElbowPole: curve([[0, [0.2, -1, 0.3]], [TC, [0.2, -1, 0.4]], [1.4, [0.3, -0.6, 0.6]], [1.85, [0, -1, 0.3]]]),
       bElbowPole: curve([[0, [-0.5, -1, 0]], [TFP, [-0.4, -1, -0.1]], [TC, [0, -1, 0.1]], [1.4, [0.4, -0.5, 0.5]], [1.85, [0.3, -0.8, 0.3]]]),
     };
@@ -100,8 +104,8 @@ function proKeys(kind, faults) {
     bElbowPole: curve([[0, [0, -1, 0.5]], [1.3, [-0.6, -0.8, 0]], [TFP, [-1, -0.2, -0.2]], [1.64, [-0.6, -0.1, -0.6]], [TR, [0.2, -0.4, -0.8]], [2.2, [0, -1, -0.3]]]),
   };
 }
-function buildPro(kind, faults) {
-  const K = proKeys(kind, faults), n = Math.round(K.T*K.fps), frames = [], tips = [];
+function buildPro(kind, faults, style, lefty) {
+  const K = proKeys(kind, faults, style), n = Math.round(K.T*K.fps), frames = [], tips = [];
   for (let i = 0; i < n; i++) {
     const t = i/K.fps, p = {};
     for (const k of Object.keys(K)) if (typeof K[k] === 'function') p[k] = K[k](t);
@@ -109,12 +113,32 @@ function buildPro(kind, faults) {
       const az = p.batAz/DEG, el = p.batEl/DEG, B = [Math.cos(el)*Math.cos(az), Math.sin(el), Math.cos(el)*Math.sin(az)];
       p.lWrist = v3.sub(p.grip, v3.mul(B, 0.03)); p.bWrist = v3.add(p.grip, v3.mul(B, 0.045));
       const r = poseFrom(p); frames.push(r.f);
-      const tip = v3.add(p.grip, v3.mul(B, 0.40)); tips.push({ x: tip[0], y: -tip[1], c: 1 });
+      const tip = v3.add(p.grip, v3.mul(B, K.batLen || 0.40)); tips.push({ x: tip[0], y: -tip[1], c: 1 });
     } else frames.push(poseFrom(p).f);
   }
-  const seq = { frames, conf: frames.map(() => new Float32Array(NJ).fill(1)), fps: K.fps, leadLeft: true, H: 1, groundY: 0, originX: 0, fwd: 1, demo: true, pro: !faults };
+  if (lefty) for (const f of frames) for (let j = 1; j < 17; j += 2) for (const c of [0, 1]) { const t = f[j*2+c]; f[j*2+c] = f[(j+1)*2+c]; f[(j+1)*2+c] = t; }
+  const seq = { frames, conf: frames.map(() => new Float32Array(NJ).fill(1)), fps: K.fps, leadLeft: !lefty, H: 1, groundY: 0, originX: 0, fwd: 1, demo: true, pro: !faults };
   if (kind === 'hit') { seq.batTips = tips; addBatSpeed(seq); }
   return seq;
 }
 function buildDemo(kind) { return buildPro(kind); }
 function buildFaulty(kind) { return buildPro(kind, kind === 'hit' ? { overstride: 1, headDrop: 1, earlyOpen: 1, dump: 1, cast: 1, backSlide: 1 } : { shortStride: 1, lateArm: 1, earlyHips: 1, upright: 1, gloveOut: 1 }); }
+
+/* style models: approximations of famous swings from well-documented traits (not motion capture). All four batted left-handed. */
+const MODELS = {
+  pro: { label: 'Pro model', kinds: ['hit', 'pitch'], blurb: 'A textbook swing built from pro biomechanics averages.' },
+  griffey: { label: 'Ken Griffey Jr. style', kinds: ['hit'], lefty: true, blurb: 'Hands held high, bat cocked and tipped toward the pitcher, a smooth stride that stops on the front leg, and a high, balanced finish.',
+    style: { stanceHalf: 0.16, stride: 0.17, kick: 0.05, handsY: 0.86, handsX: -0.12, batAz: 15, batEl: 50, coil: -30, extEl: 2, finishEl: 30, finishRot: 165 } },
+  bonds: { label: 'Barry Bonds style', kinds: ['hit'], lefty: true, blurb: 'Choked up and very compact, short quiet stride, hands loaded back to the shoulder, an uppercut path while staying behind the ball.',
+    style: { stanceHalf: 0.17, stride: 0.11, kick: 0.02, handsY: 0.84, handsX: -0.11, loadBack: 0.05, batLen: 0.37, batAz: 30, batEl: 62, coil: -22, bend: 26, extEl: 4, finishEl: 26, tiltC: 24 } },
+  gwynn: { label: 'Tony Gwynn style', kinds: ['hit'], lefty: true, blurb: 'Slight crouch, hands lower and close to the body, a short stride, a level line-drive path, and letting the ball get deep.',
+    style: { stanceHalf: 0.14, stride: 0.10, kick: 0.01, crouch: 0.03, bend: 28, handsY: 0.75, handsX: -0.14, handsZ: 0.12, loadBack: 0.06, batAz: 40, batEl: 45, coil: -18, depth: -0.015, extEl: -8, finishEl: 8, finishRot: 140, tiltC: 14 } },
+  ruth: { label: 'Babe Ruth style', kinds: ['hit'], lefty: true, blurb: 'Narrow stance, bat cocked back, a big aggressive stride into the ball, a steep uppercut, and a high finish with weight on the front foot.',
+    style: { stanceHalf: 0.08, stride: 0.26, kick: 0.05, coil: -40, handsY: 0.80, handsX: -0.16, loadBack: 0.08, batLen: 0.45, batAz: 20, batEl: 45, extEl: 10, finishEl: 42, finishRot: 172, tiltC: 21 } },
+  faults: { label: 'Common faults', kinds: ['hit', 'pitch'], blurb: 'Overstrides, drops the head, opens early, dumps the barrel, casts and slides the back foot.' },
+};
+function buildModel(kind, key) {
+  const m = MODELS[key] || MODELS.pro;
+  if (key === 'faults') return buildFaulty(kind);
+  return buildPro(kind, null, m.style, m.lefty);
+}
