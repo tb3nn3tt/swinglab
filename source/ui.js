@@ -195,7 +195,7 @@ async function analyzeFile(file, opts = {}) {
     msg('Scoring mechanics…', 0.97);
     const clean = cleanRaw(raw, 1.0);
     const nz = normalize(clean, leadLeft);
-    const seq = { ...nz, fps: perReal, slow, W, H, kind };
+    const seq = { ...nz, fps: perReal, slow, vw: W, vh: H, kind }; // H stays the player's body height in pixels
     if (kind === 'hit') {
       const path = solveBat(scores, null, slow, nz.H);
       seq.batTips = clean.map((k, i) => { const p = path[i]; if (!scores[i]) return null; const hx = (k[27] + k[30])/2, hy = (k[28] + k[31])/2; const a = p.angleIdx*5*Math.PI/180; const L = 0.40*nz.H; const tx = hx + Math.cos(a)*L, ty = hy + Math.sin(a)*L; return { x: (tx - nz.originX)*nz.fwd/nz.H, y: (ty - nz.groundY)/nz.H, c: p.conf }; });
@@ -325,7 +325,7 @@ function computeViewBox() {
   const pad = 0.12; viewBox = { x0: x0 - pad, x1: x1 + pad, y0: y0 - pad, y1: y1 + pad*0.6 };
 }
 function stageMap(w, h) {
-  if (st.hasVideo) { const fit = videoFit(st.seq.W, st.seq.H, w, h); return { map: (x, y) => { const p = toPixel(st.seq, x, y); return [fit.x + p[0]*fit.s, fit.y + p[1]*fit.s]; }, scale: st.seq.H*fit.s }; }
+  if (st.hasVideo) { const fit = videoFit(st.seq.vw, st.seq.vh, w, h); return { map: (x, y) => { const p = toPixel(st.seq, x, y); return [fit.x + p[0]*fit.s, fit.y + p[1]*fit.s]; }, scale: st.seq.H*fit.s }; }
   const vb = viewBox; const s = Math.min(w/(vb.x1 - vb.x0), h/(vb.y1 - vb.y0)); const ox = (w - (vb.x1 - vb.x0)*s)/2 - vb.x0*s, oy = (h - (vb.y1 - vb.y0)*s)/2 - vb.y0*s;
   return { map: (x, y) => [ox + x*s, oy + y*s], scale: s };
 }
