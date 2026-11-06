@@ -1,0 +1,2244 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>SwingLab</title>
+<meta name="description" content="Film a swing or pitch, track every joint and the bat, and see what to fix.">
+<meta name="theme-color" content="#0B121B">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SwingLab">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: night-game dugout tablet — one column on phones (stage, then the scouting report), stage pinned left on wide screens. */
+:root {
+  --bg: #EDF0F3; --surface: #FFFFFF; --surface-2: #E3E8EE; --ink: #13202F; --ink-2: #4A5A6C; --line: #CCD5DF;
+  --accent: #A8700F; --accent-ink: #FFFFFF; --accent-soft: #F5E6C8;
+  --lead: #B87A10; --back: #1F7FC4; --core: #13202F; --ghost: #0E8F6A; --past: #7A52D6;
+  --good: #1E8A55; --watch: #B7791F; --fix: #C8372D;
+  --stage: #0C141E; --stage-ink: #E9EEF4;
+  --c-hips: #1F7FC4; --c-torso: #12957A; --c-arm: #A8700F; --c-tip: #C8452F;
+  --pa: #C46A12; --pb: #6A47D1;
+  --f-display: "Saira Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0B121B; --surface: #121C28; --surface-2: #1A2635; --ink: #E7EDF4; --ink-2: #93A3B6; --line: #26364A;
+  --accent: #E8B44A; --accent-ink: #1A1206; --accent-soft: #3A2D12;
+  --lead: #E8B44A; --back: #4FB3FF; --core: #E9EEF4; --ghost: #5EE6B0; --past: #B79BFF;
+  --good: #46C98A; --watch: #E5A93B; --fix: #FF6B5E;
+  --stage: #070C12; --stage-ink: #E9EEF4;
+  --c-hips: #4FB3FF; --c-torso: #3ED3AE; --c-arm: #E8B44A; --c-tip: #FF7A5C;
+  --pa: #F5A23D; --pb: #B79BFF;
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #0B121B; --surface: #121C28; --surface-2: #1A2635; --ink: #E7EDF4; --ink-2: #93A3B6; --line: #26364A;
+  --accent: #E8B44A; --accent-ink: #1A1206; --accent-soft: #3A2D12;
+  --lead: #E8B44A; --back: #4FB3FF; --core: #E9EEF4; --ghost: #5EE6B0; --past: #B79BFF;
+  --good: #46C98A; --watch: #E5A93B; --fix: #FF6B5E;
+  --stage: #070C12; --stage-ink: #E9EEF4;
+  --c-hips: #4FB3FF; --c-torso: #3ED3AE; --c-arm: #E8B44A; --c-tip: #FF7A5C;
+  --pa: #F5A23D; --pb: #B79BFF;
+  color-scheme: dark; }
+* { box-sizing: border-box; }
+html, body { background: var(--bg); color: var(--ink); }
+body { font-family: var(--f-body); font-size: 15px; line-height: 1.45; -webkit-text-size-adjust: 100%; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--surface); }
+button, select, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+/* header */
+header.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 9; background: var(--surface); border-bottom: 1px solid var(--line); }
+.top-row { display: flex; align-items: center; gap: 12px; padding-block: 10px 8px; flex-wrap: wrap; max-width: 1240px; margin: 0 auto; }
+.brand { display: flex; align-items: baseline; gap: 8px; margin-right: auto; }
+.brand b { font-family: var(--f-display); font-weight: 700; font-size: 26px; letter-spacing: 0.02em; text-transform: uppercase; line-height: 1; }
+.brand b span { color: var(--accent); }
+@media (max-width: 520px) { .brand small { display: none; } .brand b { font-size: 23px; } .top-row { flex-wrap: nowrap; } }
+.brand small { font-family: var(--f-mono); font-size: 11px; color: var(--ink-2); letter-spacing: 0.06em; text-transform: uppercase; }
+.seg { display: inline-flex; background: var(--surface-2); border-radius: 999px; padding: 3px; gap: 2px; }
+.seg button { border: 0; background: transparent; padding: 6px 14px; border-radius: 999px; font-weight: 600; font-size: 14px; color: var(--ink-2); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.seg.sm button { padding: 4px 10px; font-size: 13px; }
+nav.tabs { display: flex; gap: 4px; max-width: 1240px; margin: 0 auto; }
+nav.tabs button { border: 0; background: none; padding: 8px 12px 10px; font-family: var(--f-display); font-weight: 600; font-size: 17px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-2); border-bottom: 3px solid transparent; }
+nav.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+
+main { max-width: 1240px; margin: 0 auto; padding-block: 16px 48px; }
+.view[hidden] { display: none !important; }
+.grid { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 960px) { .grid { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); align-items: start; } .stick { position: sticky; top: 110px; } }
+.col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; min-width: 0; }
+.eyebrow { font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
+h2 { font-family: var(--f-display); font-weight: 600; font-size: 22px; letter-spacing: 0.02em; text-transform: uppercase; margin: 2px 0 10px; text-wrap: balance; line-height: 1.1; }
+h3 { font-size: 15px; margin: 0; font-weight: 600; }
+p { margin: 0; }
+.muted { color: var(--ink-2); }
+.small { font-size: 13px; }
+
+/* capture */
+.capture { display: flex; flex-direction: column; gap: 12px; }
+.cap-btns { display: flex; gap: 10px; flex-wrap: wrap; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--line); background: var(--surface-2); border-radius: 10px; padding: 10px 16px; font-weight: 600; min-height: 44px; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.btn.ghost { background: transparent; }
+.btn.danger { color: var(--fix); }
+.btn svg { width: 18px; height: 18px; flex: none; }
+.cap-btns .btn { flex: 1 1 160px; }
+.install { border: 1px solid var(--line); background: var(--surface-2); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.backup { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.cam-open, .cam-open body { overflow: hidden; }
+.cam { position: fixed; inset: 0; z-index: 50; background: #000; color: #fff; }
+.cam video, .cam canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.cam video { object-fit: contain; }
+.cam-top { position: absolute; left: 0; right: 0; top: 0; display: flex; gap: 10px; align-items: flex-start; padding: calc(12px + env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) 24px max(12px, env(safe-area-inset-left, 0px)); background: linear-gradient(rgba(0,0,0,.7), transparent); }
+.cam-msg { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; text-align: center; font-weight: 600; font-size: 15px; }
+.cam-msg span[data-ok="1"] { color: #5EE6B0; }
+.cam-msg small { font-weight: 400; font-size: 12.5px; color: rgba(255,255,255,.75); }
+.cam-btn { width: 44px; height: 44px; border-radius: 50%; border: 0; background: rgba(255,255,255,.16); color: #fff; display: grid; place-items: center; flex: none; }
+.cam-btn svg { width: 22px; height: 22px; }
+.cam-btn:disabled { opacity: .35; }
+.cam-bottom { position: absolute; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 24px max(16px, env(safe-area-inset-right, 0px)) calc(20px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); background: linear-gradient(transparent, rgba(0,0,0,.75)); }
+.cam-timer { font-family: var(--f-mono); font-size: 16px; font-variant-numeric: tabular-nums; }
+.rec-btn { width: 76px; height: 76px; border-radius: 50%; border: 4px solid #fff; background: transparent; display: grid; place-items: center; padding: 0; }
+.rec-btn i { width: 58px; height: 58px; border-radius: 50%; background: #FF3B30; transition: all .2s; }
+.rec-btn.on i { width: 28px; height: 28px; border-radius: 6px; }
+.cam-delay { justify-self: end; display: flex; align-items: center; gap: 6px; font-size: 13.5px; }
+@media (prefers-reduced-motion: reduce) { .rec-btn i { transition: none; } }
+.pick-file { position: relative; overflow: hidden; cursor: pointer; }
+.pick-file input[type=file] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font-size: 200px; z-index: 2; }
+.pick-file:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.blocked { border: 1px solid var(--watch); background: color-mix(in srgb, var(--watch) 12%, transparent); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+.vis { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none; }
+.opts { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+.opt { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); }
+select { background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+details.tips summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+details.tips ul { margin: 8px 0 0; padding-left: 18px; color: var(--ink-2); font-size: 14px; display: grid; gap: 4px; }
+
+/* stage */
+.stage-card { padding: 0; overflow: hidden; }
+.stage-head { display: flex; gap: 8px; align-items: center; justify-content: space-between; padding: 12px 14px; flex-wrap: wrap; }
+.src-tag { font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 8px; border-radius: 6px; background: var(--accent-soft); color: var(--ink); }
+.stage { position: relative; background: var(--stage); width: 100%; aspect-ratio: 4 / 5; max-height: 64vh; overflow: hidden; }
+.stage video, .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.stage video { object-fit: contain; }
+.stage .hud { position: absolute; left: 10px; top: 10px; display: flex; gap: 6px; flex-wrap: wrap; pointer-events: none; }
+.hud span { font-family: var(--f-mono); font-size: 11px; color: var(--stage-ink); background: rgba(7,12,18,.72); padding: 3px 7px; border-radius: 5px; letter-spacing: .04em; }
+.hud .ph { color: #E8B44A; }
+.proc { position: absolute; inset: auto 0 0 0; padding: 14px; background: linear-gradient(transparent, rgba(7,12,18,.92) 40%); color: var(--stage-ink); display: flex; flex-direction: column; gap: 8px; }
+.bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,.15); overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; background: #E8B44A; transition: width .2s; }
+.proc-row { display: flex; justify-content: space-between; gap: 10px; align-items: center; font-size: 13px; }
+.proc button { background: rgba(255,255,255,.12); border: 0; color: var(--stage-ink); border-radius: 8px; padding: 6px 10px; }
+.controls { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px 14px; }
+.transport { display: flex; align-items: center; gap: 8px; }
+.icon-btn { width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); display: grid; place-items: center; flex: none; }
+.icon-btn.play { background: var(--ink); color: var(--bg); border-color: transparent; }
+.icon-btn svg { width: 20px; height: 20px; }
+.scrub { position: relative; flex: 1; min-width: 0; height: 44px; display: flex; align-items: center; }
+.scrub input { width: 100%; accent-color: var(--accent); margin: 0; }
+.ticks { position: absolute; left: 8px; right: 8px; top: 2px; height: 8px; pointer-events: none; }
+.ticks i { position: absolute; width: 2px; height: 8px; background: var(--ink-2); transform: translateX(-1px); border-radius: 1px; }
+.ticks i.key { background: var(--accent); height: 10px; }
+.frame-no { font-family: var(--f-mono); font-size: 12px; color: var(--ink-2); min-width: 64px; text-align: right; font-variant-numeric: tabular-nums; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { border: 1px solid var(--line); background: transparent; border-radius: 999px; padding: 5px 11px; font-size: 13px; font-weight: 500; color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; min-height: 32px; }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.chip .sw { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.chip.phase[aria-current="true"] { border-color: var(--accent); color: var(--ink); background: var(--accent-soft); }
+.row-lbl { font-family: var(--f-mono); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 18px; height: 3px; border-radius: 2px; display: inline-block; }
+.legend i.dash { background: repeating-linear-gradient(90deg, var(--ghost) 0 5px, transparent 5px 8px) !important; }
+
+/* report */
+.score-card { display: grid; grid-template-columns: auto 1fr; gap: 16px; align-items: center; }
+.scoreboard { background: var(--stage); color: #E8B44A; font-family: var(--f-display); font-weight: 700; font-size: 56px; line-height: 1; padding: 10px 14px 6px; border-radius: 10px; min-width: 104px; text-align: center; font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+.scoreboard small { display: block; font-family: var(--f-mono); font-size: 10px; color: #93A3B6; letter-spacing: .1em; margin-top: 4px; font-weight: 500; }
+.score-txt { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.score-txt h2 { margin: 0; }
+.metrics { display: flex; flex-direction: column; gap: 0; }
+.metric { border-top: 1px solid var(--line); padding: 14px 0; display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; }
+.metric:first-child { border-top: 0; padding-top: 4px; }
+.metric .val { font-family: var(--f-mono); font-size: 15px; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.pill { font-family: var(--f-mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; padding: 2px 7px; border-radius: 5px; font-weight: 500; }
+.pill.good { color: var(--good); background: color-mix(in srgb, var(--good) 14%, transparent); }
+.pill.watch { color: var(--watch); background: color-mix(in srgb, var(--watch) 16%, transparent); }
+.pill.fix { color: var(--fix); background: color-mix(in srgb, var(--fix) 14%, transparent); }
+.pill.na { color: var(--ink-2); background: var(--surface-2); }
+.m-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.range { grid-column: 1 / -1; position: relative; height: 18px; }
+.range .track { position: absolute; left: 0; right: 0; top: 8px; height: 2px; background: var(--line); }
+.range .band { position: absolute; top: 5px; height: 8px; background: color-mix(in srgb, var(--good) 30%, transparent); border-radius: 2px; }
+.range .mk { position: absolute; top: 2px; width: 4px; height: 14px; border-radius: 2px; transform: translateX(-2px); background: var(--ink); }
+.range .mk.past { background: var(--past); height: 10px; top: 4px; width: 3px; }
+.m-body { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.m-body .drill { color: var(--ink-2); font-size: 13.5px; }
+.m-body .drill b { color: var(--ink); font-weight: 600; }
+.m-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.linkbtn { border: 0; background: none; padding: 4px 0; color: var(--accent); font-weight: 600; font-size: 13.5px; }
+.chart-wrap { position: relative; width: 100%; height: 190px; }
+.chart-wrap canvas { width: 100%; height: 100%; display: block; }
+.order { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-family: var(--f-mono); font-size: 12.5px; margin-top: 10px; }
+.order b { padding: 3px 8px; border-radius: 5px; font-weight: 500; color: var(--bg); }
+.note { font-size: 12.5px; color: var(--ink-2); }
+.save-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.save-row input[type=text] { flex: 1 1 200px; min-width: 0; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-height: 44px; }
+.check { display: inline-flex; gap: 8px; align-items: center; font-size: 14px; }
+.toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-weight: 500; z-index: 20; max-width: calc(100% - 32px); }
+table.delta { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+table.delta th { text-align: left; font-family: var(--f-mono); font-weight: 500; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); padding: 6px 4px; border-bottom: 1px solid var(--line); }
+table.delta td { padding: 8px 4px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; vertical-align: top; }
+table.delta td.num { font-family: var(--f-mono); text-align: right; white-space: nowrap; }
+table.delta tr.off td:first-child { box-shadow: inset 3px 0 0 var(--watch); padding-left: 8px; }
+table.delta tr.big td:first-child { box-shadow: inset 3px 0 0 var(--fix); padding-left: 8px; }
+.tbl { overflow-x: auto; }
+
+/* library */
+.lib-list { display: flex; flex-direction: column; }
+.lib-item { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line); }
+.lib-item:first-child { border-top: 0; }
+.lib-item canvas { width: 64px; height: 64px; border-radius: 8px; background: var(--stage); }
+.lib-item .nm { font-weight: 600; overflow-wrap: anywhere; }
+.lib-item .meta { font-size: 12.5px; color: var(--ink-2); font-family: var(--f-mono); }
+.lib-score { font-family: var(--f-display); font-weight: 700; font-size: 26px; color: var(--accent); text-align: right; }
+.lib-actions { grid-column: 2 / -1; display: flex; gap: 6px; flex-wrap: wrap; }
+.star { color: var(--accent); }
+.empty { padding: 20px 0; color: var(--ink-2); display: flex; flex-direction: column; gap: 8px; }
+.gd-stage { position: relative; background: var(--stage); border-radius: 12px; overflow: hidden; aspect-ratio: 1 / 1; max-height: 420px; width: 100%; }
+.gd-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.cue-list { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.cue-list li { display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: start; }
+.cue-list .n { font-family: var(--f-display); font-weight: 700; font-size: 22px; color: var(--accent); line-height: 1; }
+.kv { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.kv div { background: var(--surface-2); border-radius: 10px; padding: 10px; }
+.kv b { display: block; font-family: var(--f-mono); font-weight: 500; font-size: 18px; font-variant-numeric: tabular-nums; }
+.kv span { font-size: 12px; color: var(--ink-2); }
+.err { color: var(--fix); font-size: 14px; }
+nav.tabs { overflow-x: auto; scrollbar-width: none; }
+nav.tabs::-webkit-scrollbar { display: none; }
+nav.tabs button { white-space: nowrap; flex: none; }
+@media (max-width: 520px) { nav.tabs { gap: 0; } nav.tabs button { padding: 8px 8px 10px; font-size: 15px; letter-spacing: 0.03em; } }
+.add-pl { display: flex; gap: 8px; flex-wrap: wrap; }
+.add-pl input { flex: 1 1 180px; min-width: 0; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-height: 44px; }
+.pick { display: flex; flex-direction: column; gap: 8px; }
+.pick-row { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 10px; align-items: center; }
+.pick-row select { width: 100%; min-width: 0; padding: 10px; border-radius: 10px; }
+.pick .btn { align-self: flex-start; min-height: 36px; padding: 6px 12px; font-size: 14px; }
+.who { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.who::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--c); flex: none; }
+.pick-row .who { justify-content: center; width: 34px; height: 34px; border-radius: 8px; background: color-mix(in srgb, var(--c) 18%, transparent); color: var(--ink); font-family: var(--f-display); font-size: 18px; }
+.pick-row .who::before { display: none; }
+.seg.sm button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.diff-list { margin: 0; padding: 0; list-style: none; counter-reset: d; display: flex; flex-direction: column; gap: 12px; }
+.diff-list li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; counter-increment: d; }
+.diff-list li::before { content: counter(d); font-family: var(--f-display); font-weight: 700; font-size: 22px; color: var(--accent); line-height: 1.1; }
+.seq-pair { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; margin-top: 10px; }
+.seq-lbl { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 14px; }
+.seq-pair .order { margin-top: 6px; }
+.tl { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.tl-row { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 8px; align-items: center; }
+.tl-name { font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tl-bar { position: relative; height: 18px; background: var(--surface-2); border-radius: 4px; }
+.tl-seg { position: absolute; top: 0; bottom: 0; border-radius: 3px; }
+.tl-key { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--ink); transform: translateX(-1px); }
+.tl-axis { position: relative; height: 16px; }
+.tl-axis span { position: absolute; transform: translateX(-50%); font-family: var(--f-mono); font-size: 10px; color: var(--ink-2); white-space: nowrap; }
+i.dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; background: var(--ink-2); }
+i.dot.good { background: var(--good); } i.dot.watch { background: var(--watch); } i.dot.fix { background: var(--fix); }
+@media (prefers-reduced-motion: reduce) { .bar i { transition: none; } }
+</style>
+
+<header class="top wrap">
+  <div class="top-row">
+    <div class="brand"><b>Swing<span>Lab</span></b><small id="storeTag">Motion coach</small></div>
+    <div class="seg" role="group" aria-label="Motion type">
+      <button id="mHit" aria-pressed="true">Hitting</button>
+      <button id="mPitch" aria-pressed="false">Pitching</button>
+    </div>
+  </div>
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button role="tab" id="tAnalyze" aria-selected="true">Analyze</button>
+    <button role="tab" id="tCompare" aria-selected="false">Compare</button>
+    <button role="tab" id="tLibrary" aria-selected="false">Library</button>
+    <button role="tab" id="tGame" aria-selected="false">Game day</button>
+  </nav>
+</header>
+
+<main class="wrap">
+  <!-- ANALYZE -->
+  <section class="view" id="vAnalyze">
+    <div class="grid">
+      <div class="col stick">
+        <div class="card capture">
+          <div>
+            <div class="eyebrow" id="capEyebrow">New rep</div>
+            <h2 id="capTitle">Film a swing</h2>
+          </div>
+          <div class="cap-btns">
+            <button type="button" class="btn primary" id="camBtn" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5" fill="currentColor"/></svg><span id="camLbl">Record</span></button>
+            <div class="btn primary pick-file" id="recBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="m16 10 6-3v10l-6-3z"/></svg><span id="recLbl">Film or upload a swing</span>
+              <input type="file" id="upIn" accept="video/*" aria-label="Film or upload a video">
+            </div>
+          </div>
+          <p class="note" id="recHint">Your phone asks where the video comes from. Pick <b>Camera</b> or <b>Take Video</b> to film now, or <b>Photo Library</b> to use a clip you already shot.</p>
+          <div class="blocked" id="pickHelp" hidden>
+            <b>Your phone didn't open the picker.</b>
+            <p class="small">The Claude app on some phones blocks video pickers inside pages like this. Open SwingLab in Safari or Chrome instead: tap the share or ⋯ menu at the top of this page, then <b>Open in browser</b>. Recording and saved reps work the same there.</p>
+            <button class="linkbtn" type="button" id="pickHelpClose">Dismiss</button>
+          </div>
+          <div class="opts">
+            <label class="opt" for="plSel">Player <select id="plSel"></select></label>
+            <div class="opt"><span id="handLbl">Bats</span>
+              <div class="seg sm" role="group" aria-label="Handedness"><button id="hR" aria-pressed="true">Right</button><button id="hL" aria-pressed="false">Left</button></div>
+            </div>
+            <label class="opt" for="htSel">Height <select id="htSel"></select></label>
+            <label class="opt" for="slowSel">Clip
+              <select id="slowSel"><option value="1">Normal speed</option><option value="4">Slo-mo 120 fps</option><option value="8">Slo-mo 240 fps</option></select>
+            </label>
+          </div>
+          <form class="add-pl" id="addPl" hidden>
+            <input type="text" id="plName" placeholder="Player name, like Jake" maxlength="30" aria-label="Player name" autocomplete="off">
+            <button class="btn primary" type="submit">Add</button><button class="btn ghost" type="button" id="plCancel">Cancel</button>
+          </form>
+          <div class="install" id="installCard" hidden><p class="small" id="installTxt"></p><div class="m-actions"><button class="btn primary" type="button" id="installBtn" hidden>Install app</button><button class="linkbtn" type="button" id="installHide">Not now</button></div></div>
+          <details class="tips"><summary>How to film it</summary><ul id="tipsList"></ul></details>
+        </div>
+
+        <div class="card stage-card">
+          <div class="stage-head">
+            <div><div class="eyebrow">Playback</div><h3 id="srcName">Sample swing</h3></div>
+            <span class="src-tag" id="srcTag">Sample data</span>
+          </div>
+          <div class="stage" id="stage">
+            <video id="vid" playsinline muted preload="auto"></video>
+            <canvas id="cv"></canvas>
+            <div class="hud"><span class="ph" id="hudPhase">Stance</span><span id="hudTime">0 ms</span></div>
+            <div class="proc" id="proc" hidden>
+              <div class="proc-row"><span id="procTxt">Loading tracker…</span><button id="procCancel">Cancel</button></div>
+              <div class="bar"><i id="procBar"></i></div>
+            </div>
+          </div>
+          <div class="controls">
+            <div class="transport">
+              <button class="icon-btn" id="bPrev" aria-label="Previous frame"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
+              <button class="icon-btn play" id="bPlay" aria-label="Play"><svg id="icoPlay" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4v16l13-8z"/></svg></button>
+              <button class="icon-btn" id="bNext" aria-label="Next frame"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
+              <div class="scrub"><div class="ticks" id="ticks"></div><input type="range" id="scrub" min="0" max="100" value="0" aria-label="Frame"></div>
+              <span class="frame-no" id="fNo">0 / 0</span>
+            </div>
+            <div class="chips" role="group" aria-label="Playback speed"><span class="row-lbl" style="align-self:center;margin-right:4px">Speed</span>
+              <button class="chip" data-speed="1" aria-pressed="false">1×</button><button class="chip" data-speed="0.5" aria-pressed="true">½×</button><button class="chip" data-speed="0.25" aria-pressed="false">¼×</button>
+            </div>
+            <div class="chips" id="phaseChips" aria-label="Jump to phase"></div>
+            <div class="chips" id="layerChips" aria-label="Layers">
+              <button class="chip" data-layer="video" aria-pressed="true">Video</button>
+              <button class="chip" data-layer="skel" aria-pressed="true"><i class="sw" style="background:var(--lead)"></i>Skeleton</button>
+              <button class="chip" data-layer="bat" aria-pressed="true">Bat path</button>
+              <button class="chip" data-layer="energy" aria-pressed="false">Energy flow</button>
+              <button class="chip" data-layer="ideal" aria-pressed="true"><i class="sw" style="background:var(--ghost)"></i>Fixed form</button>
+              <button class="chip" data-layer="past" aria-pressed="true"><i class="sw" style="background:var(--past)"></i>Past rep</button>
+            </div>
+            <div class="legend" id="legend"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col" id="report"></div>
+    </div>
+  </section>
+
+  <!-- COMPARE -->
+  <section class="view" id="vCompare" hidden>
+    <div class="grid">
+      <div class="col stick">
+        <div class="card">
+          <div class="eyebrow">Side by side</div>
+          <h2 id="cmpTitle">Compare two swings</h2>
+          <div class="pick">
+            <label class="pick-row" for="cmpA"><span class="who" style="--c:var(--pa)">A</span><select id="cmpA"></select></label>
+            <label class="pick-row" for="cmpB"><span class="who" style="--c:var(--pb)">B</span><select id="cmpB"></select></label>
+            <button class="btn ghost" id="cmpSwap" type="button">Swap A and B</button>
+          </div>
+          <p class="note" id="cmpNote" style="margin-top:10px"></p>
+        </div>
+        <div class="card stage-card">
+          <div class="stage" id="cStage"><canvas id="cCv"></canvas><div class="hud"><span class="ph" id="cPhase"></span><span id="cTime"></span></div></div>
+          <div class="controls">
+            <div class="transport">
+              <button class="icon-btn" id="cPrev" aria-label="Previous frame"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
+              <button class="icon-btn play" id="cPlay" aria-label="Play"><svg id="cIco" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4v16l13-8z"/></svg></button>
+              <button class="icon-btn" id="cNext" aria-label="Next frame"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
+              <div class="scrub"><input type="range" id="cScrub" min="0" max="1000" value="0" aria-label="Time"></div>
+            </div>
+            <div class="chips"><span class="row-lbl" style="align-self:center;margin-right:4px">Speed</span>
+              <button class="chip" data-cspeed="1" aria-pressed="false">1×</button><button class="chip" data-cspeed="0.5" aria-pressed="true">½×</button><button class="chip" data-cspeed="0.25" aria-pressed="false">¼×</button>
+            </div>
+            <div class="chips" id="cPhaseChips"></div>
+            <div class="chips">
+              <span class="seg sm" role="group" aria-label="Layout"><button data-copt="view:overlay" aria-pressed="true">Overlay</button><button data-copt="view:side" aria-pressed="false">Side by side</button></span>
+              <span class="seg sm" role="group" aria-label="Size"><button data-copt="size:same" aria-pressed="true">Same height</button><button data-copt="size:real" aria-pressed="false">Real size</button></span>
+              <span class="seg sm" role="group" aria-label="Timing"><button data-copt="sync:phase" aria-pressed="true">Match phases</button><button data-copt="sync:real" aria-pressed="false">Real timing</button></span>
+            </div>
+            <div class="chips">
+              <button class="chip" data-copt="paths" aria-pressed="true">Paths</button>
+              <button class="chip" data-copt="diffs" aria-pressed="true">Highlight differences</button>
+            </div>
+            <div class="legend" id="cLegend"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col" id="cReport"></div>
+    </div>
+  </section>
+
+  <!-- LIBRARY -->
+  <section class="view" id="vLibrary" hidden>
+    <div class="grid">
+      <div class="card">
+        <div class="eyebrow" id="libEyebrow">Saved skeletons</div>
+        <h2 id="libTitle">Your swings</h2>
+        <p class="note" id="libNote">Each rep stores the skeleton, phases and numbers, not the video. Mark your best one as the baseline and every new rep is checked against it.</p>
+        <div class="chips" id="libFilter" style="margin-top:12px"></div>
+        <div class="lib-list" id="libList" style="margin-top:12px"></div>
+        <div class="backup" id="backupRow" hidden>
+          <button class="btn" type="button" id="bkSave">Back up library</button>
+          <label class="btn pick-file" for="bkIn">Restore backup<input type="file" id="bkIn" accept="application/json,.json"></label>
+        </div>
+      </div>
+      <div class="col">
+        <div class="card" id="trendCard"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- GAME DAY -->
+  <section class="view" id="vGame" hidden>
+    <div class="grid">
+      <div class="col">
+        <div class="card">
+          <div class="eyebrow">Pre-game review</div>
+          <h2 id="gdTitle">Your baseline swing</h2>
+          <div class="gd-stage"><canvas id="gdCv"></canvas></div>
+          <p class="note" id="gdNote" style="margin-top:10px"></p>
+        </div>
+      </div>
+      <div class="col" id="gdSide"></div>
+    </div>
+  </section>
+</main>
+<div class="cam" id="cam" hidden role="dialog" aria-label="Camera">
+  <video id="camVid" playsinline muted autoplay></video>
+  <canvas id="camCv"></canvas>
+  <div class="cam-top">
+    <button class="cam-btn" type="button" id="camClose" aria-label="Close camera"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    <div class="cam-msg"><span id="camStatus" aria-live="polite">Opening camera…</span><small id="camHint"></small></div>
+    <button class="cam-btn" type="button" id="camFlip" aria-label="Switch camera"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h3l2-2h6l2 2h3v12H4z"/><path d="M9 13a3 3 0 0 0 5.2 2M15 13a3 3 0 0 0-5.2-2"/></svg></button>
+  </div>
+  <div class="cam-bottom">
+    <span class="cam-timer" id="camTimer">0:00</span>
+    <button class="rec-btn" type="button" id="camRec" aria-label="Start recording"><i></i></button>
+    <label class="cam-delay"><input type="checkbox" id="camDelay"> 3 s delay</label>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+<script>
+/* SwingLab core: pure motion analysis. Works on normalized frames:
+   units = body height (H), +x = toward the pitcher / plate (forward), y down, ground at y = 0. */
+const NJ = 17;
+const JN = ['Nose','L eye','R eye','L ear','R ear','L shoulder','R shoulder','L elbow','R elbow','L wrist','R wrist','L hip','R hip','L knee','R knee','L ankle','R ankle'];
+const PAIRS = { head: [[1,2],[3,4]], arms: [[5,6],[7,8],[9,10]], legs: [[11,12],[13,14],[15,16]] };
+
+function sideMap(leadLeft) {
+  const L = leadLeft;
+  return { lSh: L?5:6, bSh: L?6:5, lEl: L?7:8, bEl: L?8:7, lWr: L?9:10, bWr: L?10:9,
+           lHip: L?11:12, bHip: L?12:11, lKn: L?13:14, bKn: L?14:13, lAn: L?15:16, bAn: L?16:15 };
+}
+const P = (f, j) => [f[j*2], f[j*2+1]];
+const mid = (f, a, b) => [(f[a*2]+f[b*2])/2, (f[a*2+1]+f[b*2+1])/2];
+const dist = (a, b) => Math.hypot(a[0]-b[0], a[1]-b[1]);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const DEG = 180/Math.PI;
+function angAt(a, b, c) {
+  const v1 = [a[0]-b[0], a[1]-b[1]], v2 = [c[0]-b[0], c[1]-b[1]];
+  const d = Math.hypot(...v1)*Math.hypot(...v2) || 1e-9;
+  return Math.acos(clamp((v1[0]*v2[0]+v1[1]*v2[1])/d, -1, 1))*DEG;
+}
+function argmax(arr, a = 0, b = arr.length-1) { let bi = a; for (let i = a; i <= b; i++) if (arr[i] > arr[bi]) bi = i; return bi; }
+function argmin(arr, a = 0, b = arr.length-1) { let bi = a; for (let i = a; i <= b; i++) if (arr[i] < arr[bi]) bi = i; return bi; }
+function percentile(arr, p) { const s = arr.filter(Number.isFinite).slice().sort((a,b)=>a-b); if (!s.length) return NaN; return s[clamp(Math.round((s.length-1)*p), 0, s.length-1)]; }
+function gauss1d(arr, sigma) {
+  if (sigma <= 0) return arr.slice();
+  const r = Math.ceil(sigma*2.5), k = []; let ks = 0;
+  for (let i = -r; i <= r; i++) { const w = Math.exp(-i*i/(2*sigma*sigma)); k.push(w); ks += w; }
+  return arr.map((_, i) => { let s = 0, ws = 0; for (let j = -r; j <= r; j++) { const ii = i+j; if (ii < 0 || ii >= arr.length || !Number.isFinite(arr[ii])) continue; s += arr[ii]*k[j+r]; ws += k[j+r]; } return ws ? s/ws : arr[i]; });
+}
+function deriv(arr, fps) { const n = arr.length; return arr.map((_, i) => { const a = arr[Math.max(0,i-1)], b = arr[Math.min(n-1,i+1)]; const dt = (Math.min(n-1,i+1)-Math.max(0,i-1))/fps; return dt ? (b-a)/dt : 0; }); }
+function series(frames, fn) { return frames.map(fn); }
+
+/* ---------- raw pixel keypoint cleanup ---------- */
+// raw: array of Float32Array(51) [x,y,score]*17 in pixels
+function cleanRaw(raw, sigma = 1.0) {
+  const n = raw.length; if (!n) return raw;
+  const out = raw.map(r => Float32Array.from(r));
+  // 1) left/right swap fixes per group, against the previous frame
+  for (let i = 1; i < n; i++) {
+    const prev = out[i-1], cur = out[i];
+    for (const g of Object.values(PAIRS)) {
+      let keep = 0, swap = 0;
+      for (const [a,b] of g) {
+        keep += Math.hypot(cur[a*3]-prev[a*3], cur[a*3+1]-prev[a*3+1]) + Math.hypot(cur[b*3]-prev[b*3], cur[b*3+1]-prev[b*3+1]);
+        swap += Math.hypot(cur[b*3]-prev[a*3], cur[b*3+1]-prev[a*3+1]) + Math.hypot(cur[a*3]-prev[b*3], cur[a*3+1]-prev[b*3+1]);
+      }
+      if (swap < keep*0.6) for (const [a,b] of g) for (let c = 0; c < 3; c++) { const t = cur[a*3+c]; cur[a*3+c] = cur[b*3+c]; cur[b*3+c] = t; }
+    }
+  }
+  // 2) interpolate low-confidence joints, 3) smooth
+  for (let j = 0; j < NJ; j++) {
+    for (const c of [0,1]) {
+      let s = out.map(f => f[j*3+2] >= 0.15 ? f[j*3+c] : NaN);
+      const good = s.map((v,i)=>Number.isFinite(v)?i:-1).filter(i=>i>=0);
+      if (!good.length) continue;
+      s = s.map((v, i) => {
+        if (Number.isFinite(v)) return v;
+        let a = -1, b = -1; for (const g of good) { if (g < i) a = g; else { b = g; break; } }
+        if (a < 0) return s[b]; if (b < 0) return s[a];
+        return s[a] + (s[b]-s[a])*(i-a)/(b-a);
+      });
+      s = gauss1d(s, sigma);
+      s.forEach((v, i) => out[i][j*3+c] = v);
+    }
+  }
+  return out;
+}
+
+/* ---------- normalize pixel frames into body-height units ---------- */
+function normalize(clean, leadLeft) {
+  const n = clean.length;
+  const lens = clean.map(f => { const ny = f[1], ay = (f[15*3+1]+f[16*3+1])/2; return ay - ny; });
+  const H = (percentile(lens, 0.8) || 1)/0.88;
+  const groundY = percentile(clean.slice(0, Math.max(3, Math.round(n*0.3))).map(f => Math.max(f[15*3+1], f[16*3+1])), 0.5);
+  const originX = (clean[0][11*3]+clean[0][12*3])/2;
+  // detect forward direction and lead side from ankle travel
+  let S = sideMap(leadLeft);
+  const travel = j => { const x0 = clean[0][j*3]; let best = 0; for (const f of clean) { const d = f[j*3]-x0; if (Math.abs(d) > Math.abs(best)) best = d; } return best; };
+  let tl = travel(S.lAn), tb = travel(S.bAn), autoSwapped = false;
+  if (Math.abs(tl) < 0.4*Math.abs(tb) && Math.abs(tb) > 0.05*H) { leadLeft = !leadLeft; S = sideMap(leadLeft); [tl, tb] = [tb, tl]; autoSwapped = true; }
+  let fwd = Math.abs(tl) > 0.03*H ? Math.sign(tl) : Math.sign(clean[0][S.lAn*3] - clean[0][S.bAn*3]) || 1;
+  const frames = clean.map(f => { const o = new Float32Array(NJ*2); for (let j = 0; j < NJ; j++) { o[j*2] = (f[j*3]-originX)*fwd/H; o[j*2+1] = (f[j*3+1]-groundY)/H; } return o; });
+  const conf = clean.map(f => { const o = new Float32Array(NJ); for (let j = 0; j < NJ; j++) o[j] = f[j*3+2]; return o; });
+  return { frames, conf, H, groundY, originX, fwd, leadLeft, autoSwapped };
+}
+function toPixel(seq, x, y) { return [seq.originX + x*seq.fwd*seq.H, seq.groundY + y*seq.H]; }
+
+/* ---------- bat path from per-frame ray scores (dynamic programming) ---------- */
+const NA = 72;
+function solveBat(scores, handsNorm, slow, H) {
+  // scores: array of Float32Array(NA) or null. returns tips in normalized coords + confidence
+  const n = scores.length, maxStep = Math.round(Math.min(30, 16/Math.max(1, slow*0.5))); // in 5-degree steps
+  const norm = scores.map(s => { if (!s) return null; const m = percentile(Array.from(s), 0.5), mx = Math.max(...s); const den = (mx-m) || 1; return { v: Array.from(s, x => (x-m)/den), conf: clamp((mx-m)/(m+8), 0, 1) }; });
+  const cost = [], back = [];
+  for (let i = 0; i < n; i++) {
+    cost.push(new Float32Array(NA)); back.push(new Int16Array(NA));
+    for (let a = 0; a < NA; a++) {
+      const u = norm[i] ? -norm[i].v[a]*norm[i].conf : 0;
+      if (i === 0) { cost[i][a] = u; continue; }
+      let best = Infinity, bi = 0;
+      for (let d = -maxStep; d <= maxStep; d++) { const p = (a+d+NA)%NA; const c = cost[i-1][p] + 0.35*(d/maxStep)**2; if (c < best) { best = c; bi = p; } }
+      cost[i][a] = best + u; back[i][a] = bi;
+    }
+  }
+  const path = new Array(n); path[n-1] = argmin(Array.from(cost[n-1]));
+  for (let i = n-1; i > 0; i--) path[i-1] = back[i][path[i]];
+  // angle is in pixel space; convert direction into normalized space later by caller
+  return path.map((a, i) => ({ angleIdx: a, conf: norm[i] ? norm[i].conf*clamp(norm[i].v[a], 0, 1) : 0 }));
+}
+
+/* ---------- phase detection ---------- */
+function speedSeries(frames, fps, fn) { const p = frames.map(fn); const vx = deriv(p.map(q=>q[0]), fps), vy = deriv(p.map(q=>q[1]), fps); return gauss1d(vx.map((v,i)=>Math.hypot(v, vy[i])), 0.8); }
+function rotationSeries(frames, fps, a, b, refEnd) {
+  const w = frames.map(f => Math.abs(f[a*2]-f[b*2]));
+  const w0 = Math.max(1e-3, percentile(w.slice(0, Math.max(2, refEnd)), 0.9));
+  const mi = argmin(w, Math.max(0, Math.floor(refEnd*0.5)), w.length-1);
+  const th = w.map((v, i) => { const t = Math.acos(clamp(v/w0, 0, 1))*DEG; return i > mi ? 180 - t : t; });
+  const sm = gauss1d(th, 1.0);
+  return { angle: sm, speed: gauss1d(deriv(sm, fps).map(Math.abs), 0.8) };
+}
+
+function detectPhases(seq, kind) {
+  if (seq.fixedPhases) return seq.fixedPhases;
+  const { frames, fps } = seq; const S = sideMap(seq.leadLeft); const n = frames.length; const sec = s => Math.round(s*fps);
+  const ankX = frames.map(f => f[S.lAn*2]);
+  if (kind === 'hit') {
+    const hands = speedSeries(frames, fps, f => mid(f, 9, 10));
+    let C = argmax(hands, Math.min(n-1, sec(0.2)), Math.max(0, n-1-sec(0.05)));
+    if (seq.batSpeed) { const bs = seq.batSpeed; const b = argmax(bs, Math.max(0, C-3), Math.min(n-1, C+sec(0.12))); if (bs[b] > 0) C = b; } else C = Math.min(n-1, C+1);
+    const x0 = ankX[0]; let D = 0; for (let i = 0; i <= C; i++) D = Math.max(D, ankX[i]-x0);
+    let FP = -1, S0 = 0;
+    if (D > 0.04) { for (let i = 0; i <= C; i++) if (ankX[i]-x0 >= 0.9*D) { FP = i; break; } for (let i = 0; i <= FP; i++) if (ankX[i]-x0 > 0.12*D) { S0 = i; break; } }
+    if (FP < 0 || C - FP < 2) { FP = Math.max(0, C - sec(0.2)); S0 = Math.max(0, FP - sec(0.25)); }
+    const hx = frames.map(f => mid(f, 9, 10)[0]);
+    const L = argmin(hx, Math.max(0, S0 - sec(0.4)), Math.max(Math.max(0, S0 - sec(0.4)), FP));
+    const vx = gauss1d(deriv(hx, fps), 0.8); const pk = Math.max(...vx.slice(L, C+1));
+    let Lc = FP; for (let i = L; i <= C; i++) if (vx[i] > 0.25*pk) { Lc = Math.max(i, L); break; }
+    if (Lc > C) Lc = C;
+    const E = Math.min(n-1, argmax(hx, C, Math.min(n-1, C + sec(0.25))));
+    const F = Math.min(n-1, C + sec(0.6));
+    const ST = Math.max(0, Math.min(L, S0) - sec(0.3));
+    return { list: [ ['Stance', ST], ['Load', L], ['Foot plant', FP], ['Launch', Lc], ['Contact', C], ['Extension', E], ['Finish', F] ], start: ST, end: F, key: C, keyName: 'Contact' };
+  } else {
+    const wr = speedSeries(frames, fps, f => P(f, S.bWr));
+    const R = argmax(wr, Math.min(n-1, sec(0.3)), Math.max(0, n-1-sec(0.05)));
+    const knY = frames.map(f => f[S.lKn*2+1]);
+    const K = argmin(knY, 0, Math.max(0, R - sec(0.15)));
+    const x0 = ankX[K]; let D = 0; for (let i = K; i <= R; i++) D = Math.max(D, ankX[i]-x0);
+    let FP = -1; for (let i = K; i <= R; i++) if (ankX[i]-x0 >= 0.92*D) { FP = i; break; }
+    if (FP < 0 || FP >= R) FP = Math.max(K, R - sec(0.12));
+    const rel = frames.map(f => f[S.bWr*2] - f[S.bSh*2]);
+    const MER = argmin(rel, FP, Math.max(FP, R-1));
+    const F = Math.min(n-1, R + sec(0.35));
+    const ST = Math.max(0, K - sec(0.6));
+    return { list: [ ['Set', ST], ['Leg lift', K], ['Foot plant', FP], ['Arm cocked', MER], ['Release', R], ['Follow-through', F] ], start: ST, end: F, key: R, keyName: 'Release' };
+  }
+}
+const ph = (phases, name) => (phases.list.find(p => p[0] === name) || [null, phases.key])[1];
+
+/* ---------- kinematic sequence (energy flow) ---------- */
+function kinematicSequence(seq, kind, phases) {
+  const { frames, fps } = seq; const S = sideMap(seq.leadLeft);
+  const fp = ph(phases, 'Foot plant');
+  const pelvis = rotationSeries(frames, fps, 11, 12, Math.max(3, fp));
+  const torso = rotationSeries(frames, fps, 5, 6, Math.max(3, fp));
+  const segs = kind === 'hit'
+    ? [ ['Hips', pelvis.speed], ['Torso', torso.speed], ['Hands', speedSeries(frames, fps, f => mid(f, 9, 10))] ]
+    : [ ['Hips', pelvis.speed], ['Torso', torso.speed], ['Elbow', speedSeries(frames, fps, f => P(f, S.bEl))], ['Hand', speedSeries(frames, fps, f => P(f, S.bWr))] ];
+  if (kind === 'hit' && seq.batSpeed && seq.batOk) segs.push(['Bat', seq.batSpeed]);
+  const a = Math.max(0, fp - Math.round(0.25*fps)), b = Math.min(frames.length-1, phases.key + Math.round(0.08*fps));
+  const out = segs.map(([name, s]) => { const pk = argmax(s, a, b); return { name, series: s, peak: pk, peakVal: s[pk] }; });
+  let ok = 0, tot = 0; for (let i = 0; i < out.length; i++) for (let j = i+1; j < out.length; j++) { tot++; if (out[i].peak <= out[j].peak) ok++; }
+  const order = out.slice().sort((x, y) => x.peak - y.peak || out.indexOf(x) - out.indexOf(y)).map(s => s.name);
+  return { segs: out, order, score: tot ? ok/tot : 1, inOrder: ok === tot, pelvisAngle: pelvis.angle, torsoAngle: torso.angle };
+}
+
+/* ---------- corrections toolkit ---------- */
+const HEAD = [0,1,2,3,4];
+function bump(i, a, b, c, d) { if (i <= a || i >= d) return 0; if (i < b) return sm01((i-a)/Math.max(1,b-a)); if (i <= c) return 1; return 1 - sm01((i-c)/Math.max(1,d-c)); }
+function sm01(t) { t = clamp(t, 0, 1); return t*t*(3-2*t); }
+function shiftJ(f, js, dx, dy, w = 1) { for (const j of js) { f[j*2] += dx*w; f[j*2+1] += dy*w; } }
+function rotJ(f, js, px, py, deg) { const r = deg/DEG, c = Math.cos(r), s = Math.sin(r); for (const j of js) { const x = f[j*2]-px, y = f[j*2+1]-py; f[j*2] = px + x*c - y*s; f[j*2+1] = py + x*s + y*c; } }
+function signedAng(from, to) { let d = Math.atan2(to[1], to[0]) - Math.atan2(from[1], from[0]); while (d > Math.PI) d -= 2*Math.PI; while (d < -Math.PI) d += 2*Math.PI; return d*DEG; }
+// straighten/bend a knee to target angle keeping knee+ankle planted: rotate thigh about knee, carry body with hip
+function kneeTo(f, S, side, target, w, carryBody) {
+  const hip = side === 'l' ? S.lHip : S.bHip, kn = side === 'l' ? S.lKn : S.bKn, an = side === 'l' ? S.lAn : S.bAn;
+  const cur = angAt(P(f, hip), P(f, kn), P(f, an)); const delta = (target - cur)*w; if (Math.abs(delta) < 0.5) return;
+  const K = P(f, kn), A = P(f, an), Hh = P(f, hip);
+  const sgn = Math.sign(signedAng([A[0]-K[0], A[1]-K[1]], [Hh[0]-K[0], Hh[1]-K[1]])) || 1;
+  const before = P(f, hip); rotJ(f, [hip], K[0], K[1], sgn*delta); const after = P(f, hip);
+  const dx = after[0]-before[0], dy = after[1]-before[1];
+  if (carryBody) { const other = side === 'l' ? S.bHip : S.lHip; shiftJ(f, [...HEAD, 5,6,7,8,9,10, other], dx, dy, 1); shiftJ(f, [side === 'l' ? S.bKn : S.lKn], dx, dy, 0.5); }
+}
+
+/* ---------- metric definitions ---------- */
+function scoreMetric(m) {
+  if (!Number.isFinite(m.value)) return null;
+  if (m.value >= m.lo && m.value <= m.hi) return 100;
+  const d = m.value < m.lo ? m.lo - m.value : m.value - m.hi;
+  return Math.max(0, Math.round(100 - 55*d/m.tol));
+}
+
+function analyzeMotion(seq, kind) {
+  const S = sideMap(seq.leadLeft); const F = seq.frames; const fps = seq.fps;
+  const phases = detectPhases(seq, kind);
+  const kin = kinematicSequence(seq, kind, phases);
+  const g = name => ph(phases, name);
+  const at = i => F[clamp(i, 0, F.length-1)];
+  const metrics = [];
+  const add = m => { m.score = scoreMetric(m); metrics.push(m); };
+  const hipMid = f => mid(f, 11, 12), shMid = f => mid(f, 5, 6);
+  const tiltBack = f => { const h = hipMid(f), s = shMid(f); return Math.atan2(-(s[0]-h[0]), -(s[1]-h[1]))*DEG; };
+  const n = F.length, sec = s => Math.round(s*fps);
+
+  if (kind === 'hit') {
+    const ST = g('Stance'), L = g('Load'), FP = g('Foot plant'), LA = g('Launch'), C = g('Contact'), FI = g('Finish');
+    const stride = at(FP)[S.lAn*2] - at(ST)[S.lAn*2];
+    add({ key: 'stride', label: 'Stride length', value: stride*100, unit: '% ht', lo: 6, hi: 28, tol: 10, weight: 1, phase: 'Foot plant',
+      low: 'Little forward move. Without a stride you lose momentum into the ball.', high: 'Overstriding. A long stride drops your eyes and makes you late.',
+      drillLow: 'Step-and-hold drill: stride to a target 4 inches ahead, freeze, then swing.', drillHigh: 'Put a bat on the ground as a stride marker and land before it.',
+      fix: (f, i) => { const tgt = clamp(stride*100, 6, 28)/100; const dx = tgt - stride; const w = bump(i, g('Load'), FP, n, n+1); shiftJ(f, [S.lAn], dx, 0, w); shiftJ(f, [S.lKn], dx, 0, w*0.7); shiftJ(f, [S.lHip], dx, 0, w*0.25); } });
+    const nL = P(at(L), 0), nC = P(at(C), 0);
+    const headMove = dist(nL, nC)*100;
+    add({ key: 'head', label: 'Head movement, load to contact', value: headMove, unit: '% ht', lo: 0, hi: 6, tol: 5, weight: 1.4, phase: 'Contact',
+      high: `Your head travels ${headMove.toFixed(0)}% of your height ${nC[1]-nL[1] > Math.abs(nC[0]-nL[0]) ? 'down' : (nC[0] > nL[0] ? 'toward the pitcher' : 'backward')}. A moving head blurs the ball.`,
+      drillHigh: 'Tee work with a partner holding a hand above your cap: keep your head under it through contact.',
+      fix: (f, i) => { const w = bump(i, L, Math.round((L+C)/2), FI, n+1); const nose = P(f, 0); const dx = (nL[0]-nose[0]), dy = (nL[1]-nose[1]); const lim = 0.04; const mag = Math.hypot(dx, dy); if (mag < lim) return; const k = (mag - lim)/mag; shiftJ(f, HEAD, dx*k, dy*k, w); shiftJ(f, [5,6], dx*k, dy*k, w*0.75); shiftJ(f, [7,8,9,10], dx*k, dy*k, w*0.6); shiftJ(f, [11,12], dx*k, dy*k, w*0.3); } });
+    const loadD = (mid(at(ST), 9, 10)[0] - mid(at(L), 9, 10)[0])*100;
+    add({ key: 'load', label: 'Hand load (hands back)', value: loadD, unit: '% ht', lo: 2, hi: 14, tol: 4, weight: 0.8, phase: 'Load',
+      low: 'Hands barely move back. Without a load there is no stretch to swing from.', high: 'Hands drift far back, which lengthens the swing.',
+      drillLow: 'Rhythm drill: as the front foot lifts, push the hands back toward the catcher, then swing.', drillHigh: 'Keep the knob over your back foot during the load.',
+      fix: (f, i) => { const tgt = clamp(loadD, 2, 14); const dx = -(tgt - loadD)/100; const w = bump(i, ST, L, L, LA); shiftJ(f, [9,10], dx, 0, w); shiftJ(f, [7,8], dx, 0, w*0.6); } });
+    const kneeC = angAt(P(at(C), S.lHip), P(at(C), S.lKn), P(at(C), S.lAn));
+    add({ key: 'leadKnee', label: 'Front knee at contact', value: kneeC, unit: '°', lo: 152, hi: 180, tol: 14, weight: 1.1, phase: 'Contact',
+      low: 'Front leg stays soft at contact. A firm front leg stops your forward move and whips the barrel.',
+      drillLow: 'Front-leg brace drill: from a wide stance, push the front heel into the ground as you swing.',
+      fix: (f, i) => { const w = bump(i, FP, C - sec(0.03), C + sec(0.1), FI); kneeTo(f, S, 'l', Math.max(160, kneeC), w, true); } });
+    const kneeB = angAt(P(at(C), S.bHip), P(at(C), S.bKn), P(at(C), S.bAn));
+    add({ key: 'backKnee', label: 'Back knee at contact', value: kneeB, unit: '°', lo: 95, hi: 150, tol: 15, weight: 0.5, phase: 'Contact',
+      low: 'Back knee collapses deep. You are sinking instead of rotating.', high: 'Back leg stays straight. You are not driving off the back side.',
+      drillLow: 'Stay tall through the turn: shoot the back knee toward the front knee, not down.', drillHigh: 'Squish-the-bug drill: turn on the ball of the back foot and drive the back knee forward.',
+      fix: (f, i) => { const w = bump(i, FP, C, C + sec(0.05), FI); const k = clamp(kneeB, 105, 145); const tgtAng = k; const cur = kneeB; if (Math.abs(cur - tgtAng) < 1) return; const K = P(f, S.bKn), A = P(f, S.bAn), Hh = P(f, S.bHip); const sgn = Math.sign(signedAng([Hh[0]-K[0], Hh[1]-K[1]], [A[0]-K[0], A[1]-K[1]])) || 1; rotJ(f, [S.bKn], Hh[0], Hh[1], -sgn*(tgtAng-cur)*0.35*w); } });
+    const tilt = tiltBack(at(C));
+    add({ key: 'tilt', label: 'Spine tilt at contact', value: tilt, unit: '°', lo: 8, hi: 35, tol: 10, weight: 1, phase: 'Contact',
+      low: 'Shoulders get out in front of your hips. You are lunging at the ball.', high: 'Leaning back too far. This lifts the barrel and causes pop-ups.',
+      drillLow: 'Keep the back shoulder lower than the front through the swing; stay behind the ball.', drillHigh: 'High-tee drill: swing level at a ball set at the top of the zone.',
+      fix: (f, i) => { const w = bump(i, FP, C - sec(0.05), C + sec(0.12), FI); const tgt = clamp(tilt, 12, 30); const h = hipMid(f); rotJ(f, [0,1,2,3,4,5,6,7,8,9,10], h[0], h[1], (tgt - tilt)*w); } });
+    const drift = (hipMid(at(C))[0] - hipMid(at(L))[0])*100;
+    add({ key: 'drift', label: 'Hip shift toward pitcher', value: drift, unit: '% ht', lo: 2, hi: 16, tol: 6, weight: 0.8, phase: 'Contact',
+      low: 'Weight stays on the back side. You are spinning without moving into the ball.', high: 'Hips slide too far forward. Your weight is out over the front foot.',
+      drillLow: 'Walk-through drill: take a step back, then stride and swing to feel the forward move.', drillHigh: 'Hold a wall against your front hip: rotate into it, do not slide past it.',
+      fix: (f, i) => { const tgt = clamp(drift, 2, 16); const dx = (tgt - drift)/100; const w = bump(i, L, C, FI, n+1); shiftJ(f, [...HEAD, 5,6,7,8,9,10,11,12], dx, 0, w); shiftJ(f, [S.lKn, S.bKn], dx, 0, w*0.5); } });
+    const ttc = (C - LA)/fps;
+    add({ key: 'ttc', label: 'Launch to contact time', value: ttc*1000, unit: 'ms', lo: 120, hi: 200, tol: 50, weight: 0.6, phase: 'Launch',
+      low: 'Very quick launch. Check that this was a full swing.', high: 'Long swing. The hands take a slow, wide route to the ball.',
+      drillLow: '', drillHigh: 'Short-bat or knob-to-ball drill: lead with the knob and keep the barrel tight to the back shoulder.', fix: null });
+    add({ key: 'seq', label: 'Kinematic sequence', value: kin.score*100, unit: '%', lo: 99, hi: 100, tol: 30, weight: 1.4, phase: 'Launch', order: kin.order,
+      low: `Energy order was ${kin.order.join(' → ')}. Ideal is hips first, then torso, then hands${kin.segs.some(s=>s.name==='Bat')?', then bat':''}. When a later segment fires early, speed leaks out.`,
+      drillLow: 'Hip-turn drill: bat behind the back, fire the hips toward the pitcher while the shoulders stay closed for a beat.', fix: null });
+    const hm = hipMid(at(FI)); const a1 = at(FI)[S.lAn*2], a2 = at(FI)[S.bAn*2];
+    const bal = (hm[0] - (Math.min(a1, a2) + Math.max(a1, a2))/2) / Math.max(0.05, Math.abs(a1 - a2)/2) * 100;
+    add({ key: 'balance', label: 'Finish balance (hips over base)', value: bal, unit: '%', lo: -60, hi: 70, tol: 40, weight: 0.5, phase: 'Finish',
+      low: 'Falling back at the finish.', high: 'Falling forward past the front foot at the finish.',
+      drillLow: 'Hold your finish for 2 seconds after every tee swing.', drillHigh: 'Hold your finish for 2 seconds after every tee swing.',
+      fix: (f, i) => { const tgt = clamp(bal, -60, 70); const half = Math.max(0.05, Math.abs(a1-a2)/2); const dx = (tgt - bal)/100*half; const w = bump(i, C, FI - sec(0.15), n, n+1); shiftJ(f, [...HEAD, 5,6,7,8,9,10,11,12], dx, 0, w); } });
+    // informational
+    const hs = speedSeries(F, fps, f => mid(f, 9, 10));
+    seq.info = { handSpeed: Math.max(...hs.slice(LA, C+2)), batSpeed: seq.batSpeed && seq.batOk ? Math.max(...seq.batSpeed.slice(Math.max(0, C-3), C+3)) : null };
+  } else {
+    const K = g('Leg lift'), FP = g('Foot plant'), R = g('Release'), MER = g('Arm cocked'), FT = g('Follow-through');
+    const lift = (at(K)[S.lHip*2+1] - at(K)[S.lKn*2+1])*100;
+    add({ key: 'lift', label: 'Leg lift height (knee vs hip)', value: lift, unit: '% ht', lo: -4, hi: 14, tol: 6, weight: 0.6, phase: 'Leg lift',
+      low: 'Low leg lift. You give up some of the potential energy you could drive down the mound.', high: 'Very high leg lift. Check that you stay balanced over the rubber.',
+      drillLow: 'Balance-point drill: lift to belt height and hold 2 seconds before driving.', drillHigh: 'Balance-point drill: lift to belt height and hold 2 seconds before driving.',
+      fix: (f, i) => { const dy = -(clamp(lift, -4, 14) - lift)/100; const w = bump(i, g('Set'), K, K, FP); shiftJ(f, [S.lKn, S.lAn], 0, dy, w); } });
+    const stride = (at(FP)[S.lAn*2] - at(FP)[S.bAn*2])*100;
+    add({ key: 'stride', label: 'Stride length at foot plant', value: stride, unit: '% ht', lo: 75, hi: 95, tol: 10, weight: 1.2, phase: 'Foot plant',
+      low: 'Short stride. You land early and release the ball farther from the plate.', high: 'Very long stride. Your hips sink and the arm has to catch up.',
+      drillLow: 'Stride-line drill: mark 80% of your height from the rubber and land on it.', drillHigh: 'Stride-line drill: mark 85% of your height and land on it, not past it.',
+      fix: (f, i) => { const dx = (clamp(stride, 75, 95) - stride)/100; const w = bump(i, K, FP, n, n+1); shiftJ(f, [S.lAn], dx, 0, w); shiftJ(f, [S.lKn], dx, 0, w*0.8); shiftJ(f, [...HEAD, 5,6,7,8,9,10,11,12], dx, 0, w*0.45); shiftJ(f, [S.bKn], dx, 0, w*0.3); } });
+    const kFP = angAt(P(at(FP), S.lHip), P(at(FP), S.lKn), P(at(FP), S.lAn));
+    const kR = angAt(P(at(R), S.lHip), P(at(R), S.lKn), P(at(R), S.lAn));
+    add({ key: 'kneeFP', label: 'Front knee at foot plant', value: kFP, unit: '°', lo: 125, hi: 160, tol: 14, weight: 0.7, phase: 'Foot plant',
+      low: 'Landing in a deep bend. You will struggle to brace the front leg.', high: 'Landing stiff-legged. This puts stress on the knee and tips the head forward early.',
+      drillLow: 'Land softly but with the knee over the ankle, then push back into the ground.', drillHigh: 'Land with a slight bend, like landing from a small hop.',
+      fix: (f, i) => { const w = bump(i, K, FP, FP, R); kneeTo(f, S, 'l', clamp(kFP, 130, 155), w, true); } });
+    const block = kR - kFP;
+    add({ key: 'block', label: 'Front leg brace (plant to release)', value: block, unit: '°', lo: 0, hi: 40, tol: 12, weight: 1.1, phase: 'Release',
+      low: `Front knee bends another ${Math.abs(block).toFixed(0)}° after landing. The leg is giving way, so energy leaks instead of transferring up to the arm.`, high: 'Front leg snaps very straight. Fine if it is smooth and you are not jarring the knee.',
+      drillLow: 'Rocker drill: land, then push the front heel down and straighten the front leg as you throw.', drillHigh: '',
+      fix: (f, i) => { const w = bump(i, FP, R - 1, R + Math.round(fps*0.1), FT); kneeTo(f, S, 'l', Math.max(kFP + 8, kR), w, true); } });
+    const elbowH = (at(FP)[S.bSh*2+1] - at(FP)[S.bEl*2+1])*100;
+    add({ key: 'elbow', label: 'Throwing elbow height at foot plant', value: elbowH, unit: '% ht', lo: -5, hi: 6, tol: 5, weight: 1, phase: 'Foot plant',
+      low: 'Throwing elbow is below the shoulder at landing. This loads the shoulder and arm.', high: 'Elbow very high above the shoulder at landing.',
+      drillLow: 'Mirror drill: at your landing position, check the elbow is level with the shoulder line.', drillHigh: 'Mirror drill: at your landing position, check the elbow is level with the shoulder line.',
+      fix: (f, i) => { const w = bump(i, K, FP, MER, R); const sh = P(f, S.bSh), el = P(f, S.bEl); const tgtY = sh[1] - clamp(elbowH, -3, 5)/100; const L = dist(sh, el); const dy = tgtY - sh[1]; const dxs = Math.sign(el[0]-sh[0]) || -1; const nx = Math.sqrt(Math.max(0, L*L - dy*dy)) * dxs; const deg = signedAng([el[0]-sh[0], el[1]-sh[1]], [nx, dy]); rotJ(f, [S.bEl, S.bWr], sh[0], sh[1], deg*w); } });
+    const armUp = (at(FP)[S.bEl*2+1] - at(FP)[S.bWr*2+1])*100;
+    add({ key: 'armTiming', label: 'Arm up at foot plant (hand over elbow)', value: armUp, unit: '% ht', lo: 2, hi: 30, tol: 6, weight: 1, phase: 'Foot plant',
+      low: 'Throwing hand is below the elbow when the front foot lands. The arm is late and has to rush to catch up.', high: '',
+      drillLow: 'Rhythm drill: break hands earlier so the ball is up, facing second base, when the front foot lands.', drillHigh: '',
+      fix: (f, i) => { const w = bump(i, K, FP, MER, R); const el = P(f, S.bEl), wr = P(f, S.bWr); const L = dist(el, wr); const tgt = [el[0] - L*0.35, el[1] - L*0.94]; const deg = signedAng([wr[0]-el[0], wr[1]-el[1]], [tgt[0]-el[0], tgt[1]-el[1]]); rotJ(f, [S.bWr], el[0], el[1], deg*w); } });
+    const hm = mid(at(R), 11, 12), sm = mid(at(R), 5, 6); const fTilt = Math.atan2(sm[0]-hm[0], -(sm[1]-hm[1]))*DEG;
+    add({ key: 'trunk', label: 'Trunk forward tilt at release', value: fTilt, unit: '°', lo: 25, hi: 50, tol: 10, weight: 1, phase: 'Release',
+      low: 'Upright at release. You are not getting out over your front leg.', high: 'Bent far over at release. Your head and eyes drop off the target.',
+      drillLow: 'Towel drill: reach the towel out to a target 6 feet in front of your stride foot.', drillHigh: 'Keep your eyes level on the catcher\'s mitt through release.',
+      fix: (f, i) => { const w = bump(i, FP, R - 1, R + 2, FT); const h = mid(f, 11, 12); rotJ(f, [0,1,2,3,4,5,6,7,8,9,10], h[0], h[1], (clamp(fTilt, 28, 46) - fTilt)*w); } });
+    const tuck = dist(P(at(R), S.lWr), mid(at(R), 5, 6))*100;
+    add({ key: 'glove', label: 'Glove arm tucked at release', value: tuck, unit: '% ht', lo: 0, hi: 20, tol: 8, weight: 0.7, phase: 'Release',
+      low: '', high: 'Glove flies away from the body. It pulls the front shoulder open early.',
+      drillLow: '', drillHigh: 'Bring your chest to the glove, keep the glove out front and over the front knee.',
+      fix: (f, i) => { const w = bump(i, FP, R - 1, R + 3, FT); const s = mid(f, 5, 6); const g2 = P(f, S.lWr); const target = [s[0] + 0.06, s[1] + 0.06]; shiftJ(f, [S.lWr], (target[0]-g2[0]), (target[1]-g2[1]), w); const e = P(f, S.lEl); shiftJ(f, [S.lEl], (target[0]-e[0])*0.5 + 0.0, (target[1]+0.04-e[1])*0.5, w); } });
+    const ext = (at(R)[S.bWr*2] - at(FP)[S.lAn*2])*100;
+    add({ key: 'release', label: 'Release point vs front foot', value: ext, unit: '% ht', lo: -12, hi: 20, tol: 8, weight: 0.7, phase: 'Release',
+      low: 'Releasing well behind the front foot. You lose extension and the hitter sees the ball longer.', high: '',
+      drillLow: 'Long-toss with a focus on finishing the arm out over the front knee.', drillHigh: '',
+      fix: (f, i) => { const dx = (clamp(ext, -12, 20) - ext)/100; const w = bump(i, MER, R, R + 1, FT); shiftJ(f, [S.bWr], dx, 0, w); shiftJ(f, [S.bEl], dx*0.6, 0, w); shiftJ(f, [...HEAD, 5, 6], dx*0.35, 0, w); } });
+    add({ key: 'seq', label: 'Kinematic sequence', value: kin.score*100, unit: '%', lo: 99, hi: 100, tol: 30, weight: 1.4, phase: 'Foot plant', order: kin.order,
+      low: `Energy order was ${kin.order.join(' → ')}. Ideal is hips, then torso, then elbow, then hand. When the arm fires early it does the work the legs should.`,
+      drillLow: 'Hip-lead drill: from the stride position, rotate the hips toward the plate while the chest stays closed for a beat.', fix: null });
+    const slot = Math.atan2(-(at(R)[S.bWr*2+1] - at(R)[S.bSh*2+1]), at(R)[S.bWr*2] - at(R)[S.bSh*2])*DEG;
+    const ws = speedSeries(F, fps, f => P(f, S.bWr));
+    seq.info = { armSlot: slot, handSpeed: ws[R] };
+  }
+  metrics.forEach(m => { m.status = m.score == null ? 'na' : m.score >= 85 ? 'good' : m.score >= 60 ? 'watch' : 'fix'; const show = m.status !== 'good'; m.cue = !show ? '' : m.value < m.lo ? m.low : m.value > m.hi ? m.high : ''; m.drill = !show ? '' : m.value < m.lo ? m.drillLow : m.value > m.hi ? m.drillHigh : ''; });
+  const scored = metrics.filter(m => m.score != null);
+  const tw = scored.reduce((s, m) => s + m.weight, 0) || 1;
+  const overall = Math.round(scored.reduce((s, m) => s + m.score*m.weight, 0)/tw);
+  // ideal ghost frames
+  const fixes = metrics.filter(m => m.fix && m.score != null && m.score < 85);
+  const ideal = F.map((f, i) => { const o = Float32Array.from(f); for (const m of fixes) m.fix(o, i); return o; });
+  return { kind, phases, kin, metrics, overall, ideal, fixes: fixes.map(m => m.key) };
+}
+
+/* ---------- storage format + comparison ---------- */
+function packRecord(seq, res, meta) {
+  const a = res.phases.start, b = res.phases.end;
+  const fr = []; for (let i = a; i <= b; i++) fr.push(Array.from(seq.frames[i], v => Math.round(v*1000)));
+  const bat = seq.batTips ? seq.batTips.slice(a, b+1).map(t => t && t.c > 0.2 ? [Math.round(t.x*1000), Math.round(t.y*1000)] : 0) : null;
+  return { v: 1, kind: res.kind, fps: seq.fps, leadLeft: seq.leadLeft, frames: fr, bat,
+    phases: res.phases.list.map(([nm, i]) => [nm, clamp(i - a, 0, b - a)]), key: res.phases.key - a,
+    metrics: Object.fromEntries(res.metrics.map(m => [m.key, Number.isFinite(m.value) ? Math.round(m.value*10)/10 : null])),
+    order: res.kin.order, overall: res.overall, info: seq.info || {}, cues: res.metrics.filter(m => m.status === 'fix' || m.status === 'watch').sort((x,y)=>x.score-y.score).slice(0,3).map(m => ({ key: m.key, label: m.label, cue: m.cue })),
+    ...meta };
+}
+function unpackFrames(rec) { return rec.frames.map(a => Float32Array.from(a, v => v/1000)); }
+function seqFromRecord(rec) {
+  const frames = unpackFrames(rec);
+  const seq = { frames, conf: frames.map(() => new Float32Array(NJ).fill(1)), fps: rec.fps, leadLeft: rec.leadLeft, H: 1, groundY: 0, originX: 0, fwd: 1,
+    batTips: rec.bat ? rec.bat.map(t => t ? { x: t[0]/1000, y: t[1]/1000, c: 1 } : null) : null, stored: true };
+  seq.fixedPhases = { list: rec.phases.map(p => [p[0], clamp(p[1], 0, frames.length - 1)]), start: 0, end: frames.length - 1, key: clamp(rec.key, 0, frames.length - 1), keyName: rec.kind === 'hit' ? 'Contact' : 'Release' };
+  if (seq.batTips) addBatSpeed(seq);
+  return seq;
+}
+// map a current frame index to a fractional stored index, aligning phases piecewise-linearly
+function alignIndex(curPhases, recPhases, i, recLen) {
+  const pts = []; for (const [nm, ci] of curPhases) { const r = recPhases.find(p => p[0] === nm); if (r) pts.push([ci, r[1]]); }
+  pts.sort((a, b) => a[0] - b[0]);
+  if (!pts.length) return clamp(i, 0, recLen-1);
+  if (i <= pts[0][0]) return clamp(pts[0][1] - (pts[0][0] - i), 0, recLen-1);
+  for (let k = 1; k < pts.length; k++) if (i <= pts[k][0]) { const [a0, b0] = pts[k-1], [a1, b1] = pts[k]; return clamp(b0 + (b1-b0)*(i-a0)/Math.max(1e-6, a1-a0), 0, recLen-1); }
+  const last = pts[pts.length-1]; return clamp(last[1] + (i - last[0]), 0, recLen-1);
+}
+function lerpFrame(frames, fi) { const a = Math.floor(fi), b = Math.min(frames.length-1, a+1), t = fi - a; const fa = frames[a], fb = frames[b]; const o = new Float32Array(NJ*2); for (let k = 0; k < o.length; k++) o[k] = fa[k] + (fb[k]-fa[k])*t; return o; }
+const DELTA_TOL = { stride: 5, head: 3, load: 3, leadKnee: 10, backKnee: 12, tilt: 7, drift: 5, ttc: 35, seq: 20, balance: 35, lift: 5, kneeFP: 10, block: 10, elbow: 4, armTiming: 5, trunk: 7, glove: 6, release: 6 };
+function compareRecords(curMetrics, rec) {
+  return curMetrics.filter(m => Number.isFinite(m.value) && rec.metrics[m.key] != null).map(m => {
+    const d = m.value - rec.metrics[m.key]; const tol = DELTA_TOL[m.key] || m.tol/2;
+    return { key: m.key, label: m.label, unit: m.unit, now: m.value, then: rec.metrics[m.key], delta: d, off: Math.abs(d) > tol, big: Math.abs(d) > 2*tol };
+  });
+}
+
+/* ---------- demo motions (procedural sample data) ---------- */
+function kf(o) { // o: {joint: [x,y]}; returns Float32Array frame
+  const f = new Float32Array(NJ*2);
+  const map = { nose:0, lEye:1, rEye:2, lEar:3, rEar:4, lSh:5, rSh:6, lEl:7, rEl:8, lWr:9, rWr:10, lHip:11, rHip:12, lKn:13, rKn:14, lAn:15, rAn:16 };
+  for (const [k, v] of Object.entries(o)) { f[map[k]*2] = v[0]; f[map[k]*2+1] = v[1]; }
+  if (!o.lEye) { f[2] = f[0]+0.02; f[3] = f[1]-0.02; f[4] = f[0]-0.02; f[5] = f[1]-0.02; f[6] = f[0]+0.045; f[7] = f[1]-0.01; f[8] = f[0]-0.045; f[9] = f[1]-0.01; }
+  return f;
+}
+function catmull(p0, p1, p2, p3, t) { const t2 = t*t, t3 = t2*t; return 0.5*((2*p1) + (-p0+p2)*t + (2*p0-5*p1+4*p2-p3)*t2 + (-p0+3*p1-3*p2+p3)*t3); }
+function buildDemo(kind) {
+  const fps = 30;
+  const keys = kind === 'hit' ? [
+    [0.00, { nose:[0,-0.90], lSh:[0.10,-0.80], rSh:[-0.10,-0.80], lEl:[0.0,-0.68], rEl:[-0.20,-0.70], lWr:[-0.10,-0.78], rWr:[-0.12,-0.79], lHip:[0.08,-0.50], rHip:[-0.08,-0.50], lKn:[0.12,-0.27], rKn:[-0.13,-0.27], lAn:[0.17,-0.02], rAn:[-0.17,-0.02] }],
+    [0.35, { nose:[-0.01,-0.90], lSh:[0.09,-0.80], rSh:[-0.11,-0.80], lEl:[-0.01,-0.68], rEl:[-0.21,-0.70], lWr:[-0.12,-0.78], rWr:[-0.14,-0.79], lHip:[0.07,-0.50], rHip:[-0.09,-0.50], lKn:[0.12,-0.28], rKn:[-0.14,-0.27], lAn:[0.18,-0.03], rAn:[-0.17,-0.02] }],
+    [0.55, { nose:[-0.02,-0.90], lSh:[0.06,-0.80], rSh:[-0.12,-0.80], lEl:[-0.03,-0.68], rEl:[-0.25,-0.70], lWr:[-0.16,-0.79], rWr:[-0.18,-0.80], lHip:[0.05,-0.50], rHip:[-0.10,-0.50], lKn:[0.13,-0.30], rKn:[-0.15,-0.27], lAn:[0.21,-0.07], rAn:[-0.17,-0.02] }],
+    [0.78, { nose:[0.03,-0.88], lSh:[0.10,-0.79], rSh:[-0.10,-0.80], lEl:[0.0,-0.67], rEl:[-0.22,-0.69], lWr:[-0.14,-0.78], rWr:[-0.16,-0.79], lHip:[0.12,-0.48], rHip:[-0.02,-0.49], lKn:[0.26,-0.27], rKn:[-0.10,-0.26], lAn:[0.34,-0.02], rAn:[-0.17,-0.02] }],
+    [0.86, { nose:[0.06,-0.85], lSh:[0.11,-0.77], rSh:[-0.05,-0.77], lEl:[0.06,-0.66], rEl:[-0.12,-0.64], lWr:[-0.02,-0.70], rWr:[-0.04,-0.71], lHip:[0.12,-0.48], rHip:[0.04,-0.48], lKn:[0.25,-0.26], rKn:[-0.05,-0.25], lAn:[0.34,-0.02], rAn:[-0.16,-0.02] }],
+    [0.93, { nose:[0.10,-0.82], lSh:[0.11,-0.75], rSh:[0.04,-0.73], lEl:[0.17,-0.66], rEl:[0.07,-0.62], lWr:[0.24,-0.62], rWr:[0.22,-0.63], lHip:[0.12,-0.48], rHip:[0.08,-0.47], lKn:[0.23,-0.26], rKn:[-0.01,-0.24], lAn:[0.34,-0.02], rAn:[-0.15,-0.02] }],
+    [1.03, { nose:[0.11,-0.82], lSh:[0.05,-0.77], rSh:[0.10,-0.74], lEl:[0.20,-0.71], rEl:[0.18,-0.68], lWr:[0.34,-0.72], rWr:[0.32,-0.71], lHip:[0.09,-0.48], rHip:[0.12,-0.48], lKn:[0.24,-0.26], rKn:[0.03,-0.25], lAn:[0.34,-0.02], rAn:[-0.13,-0.03] }],
+    [1.45, { nose:[0.09,-0.86], lSh:[-0.02,-0.79], rSh:[0.13,-0.77], lEl:[0.02,-0.86], rEl:[0.12,-0.87], lWr:[-0.06,-0.95], rWr:[-0.08,-0.93], lHip:[0.04,-0.50], rHip:[0.14,-0.50], lKn:[0.25,-0.27], rKn:[0.08,-0.27], lAn:[0.34,-0.02], rAn:[-0.08,-0.05] }],
+  ] : [
+    [0.00, { nose:[0.05,-0.90], lSh:[0.03,-0.80], rSh:[-0.01,-0.80], lEl:[0.0,-0.66], rEl:[0.02,-0.65], lWr:[0.07,-0.68], rWr:[0.07,-0.67], lHip:[0.02,-0.50], rHip:[0.0,-0.50], lKn:[0.07,-0.26], rKn:[-0.06,-0.26], lAn:[0.10,-0.02], rAn:[-0.08,-0.02] }],
+    [0.60, { nose:[0.0,-0.92], lSh:[-0.01,-0.82], rSh:[-0.04,-0.82], lEl:[-0.03,-0.68], rEl:[-0.02,-0.67], lWr:[0.03,-0.70], rWr:[0.03,-0.69], lHip:[-0.01,-0.52], rHip:[-0.03,-0.52], lKn:[0.07,-0.50], rKn:[-0.06,-0.27], lAn:[0.02,-0.30], rAn:[-0.08,-0.02] }],
+    [0.92, { nose:[0.17,-0.86], lSh:[0.15,-0.78], rSh:[0.11,-0.78], lEl:[0.30,-0.74], rEl:[0.04,-0.62], lWr:[0.40,-0.75], rWr:[-0.04,-0.56], lHip:[0.16,-0.47], rHip:[0.13,-0.47], lKn:[0.35,-0.36], rKn:[0.01,-0.25], lAn:[0.45,-0.12], rAn:[-0.08,-0.02] }],
+    [1.05, { nose:[0.29,-0.85], lSh:[0.30,-0.75], rSh:[0.19,-0.75], lEl:[0.42,-0.74], rEl:[0.10,-0.69], lWr:[0.50,-0.72], rWr:[0.06,-0.66], lHip:[0.30,-0.44], rHip:[0.24,-0.44], lKn:[0.52,-0.25], rKn:[0.12,-0.20], lAn:[0.64,-0.02], rAn:[-0.06,-0.04] }],
+    [1.13, { nose:[0.40,-0.82], lSh:[0.42,-0.72], rSh:[0.30,-0.73], lEl:[0.46,-0.68], rEl:[0.22,-0.74], lWr:[0.48,-0.62], rWr:[0.16,-0.85], lHip:[0.38,-0.44], rHip:[0.33,-0.44], lKn:[0.53,-0.24], rKn:[0.20,-0.18], lAn:[0.64,-0.02], rAn:[-0.03,-0.05] }],
+    [1.19, { nose:[0.53,-0.78], lSh:[0.50,-0.68], rSh:[0.44,-0.71], lEl:[0.50,-0.58], rEl:[0.52,-0.78], lWr:[0.60,-0.54], rWr:[0.64,-0.83], lHip:[0.42,-0.43], rHip:[0.39,-0.43], lKn:[0.56,-0.23], rKn:[0.26,-0.17], lAn:[0.64,-0.02], rAn:[0.02,-0.06] }],
+    [1.55, { nose:[0.70,-0.62], lSh:[0.63,-0.60], rSh:[0.60,-0.66], lEl:[0.56,-0.52], rEl:[0.70,-0.48], lWr:[0.50,-0.52], rWr:[0.60,-0.33], lHip:[0.50,-0.45], rHip:[0.48,-0.45], lKn:[0.60,-0.24], rKn:[0.46,-0.30], lAn:[0.64,-0.02], rAn:[0.40,-0.18] }],
+  ];
+  const T = keys[keys.length-1][0] + 0.25, n = Math.round(T*fps);
+  const kfr = keys.map(([t, o]) => [t, kf(o)]);
+  const frames = [];
+  for (let i = 0; i < n; i++) {
+    const t = Math.min(i/fps, keys[keys.length-1][0]);
+    let k = 0; while (k < kfr.length-2 && t > kfr[k+1][0]) k++;
+    const [t1, f1] = kfr[k], [t2, f2] = kfr[k+1]; const f0 = kfr[Math.max(0, k-1)][1], f3 = kfr[Math.min(kfr.length-1, k+2)][1];
+    const u = clamp((t - t1)/(t2 - t1), 0, 1);
+    const o = new Float32Array(NJ*2); for (let q = 0; q < o.length; q++) o[q] = catmull(f0[q], f1[q], f2[q], f3[q], u);
+    frames.push(o);
+  }
+  const seq = { frames, conf: frames.map(() => new Float32Array(NJ).fill(1)), fps, leadLeft: true, H: 1, groundY: 0, originX: 0, fwd: 1, demo: true };
+  if (kind === 'hit') {
+    const bk = [[0, -105, 0.42], [0.55, -122, 0.42], [0.78, -135, 0.40], [0.86, -165, 0.36], [0.93, 18, 0.22], [1.03, 30, 0.36], [1.45, 200, 0.38]];
+    seq.batTips = frames.map((f, i) => { const t = i/fps; let k = 0; while (k < bk.length-2 && t > bk[k+1][0]) k++; const [a1, d1, l1] = bk[k], [a2, d2, l2] = bk[k+1]; let dd = ((d2 - d1 + 540) % 360) - 180; if (k === 5) dd = d2 - d1 - 360; const u = sm01(clamp((t - a1)/(a2 - a1), 0, 1)); const ang = (d1 + dd*u)/DEG, L = l1 + (l2 - l1)*u; const h = mid(f, 9, 10); return { x: h[0] + Math.cos(ang)*L, y: h[1] + Math.sin(ang)*L, c: 1 }; });
+    addBatSpeed(seq);
+  }
+  return seq;
+}
+function addBatSpeed(seq) {
+  if (!seq.batTips) return;
+  const t = seq.batTips; const ok = t.filter(b => b && b.c > 0.2).length / t.length;
+  const xs = t.map(b => b ? b.x : NaN), ys = t.map(b => b ? b.y : NaN);
+  const fill = arr => { let last = NaN; const o = arr.map(v => Number.isFinite(v) ? (last = v) : last); let nx = NaN; for (let i = o.length-1; i >= 0; i--) { if (Number.isFinite(arr[i])) nx = arr[i]; if (!Number.isFinite(o[i])) o[i] = nx; } return o; };
+  const fx = fill(xs), fy = fill(ys);
+  const vx = deriv(fx, seq.fps), vy = deriv(fy, seq.fps);
+  seq.batSpeed = gauss1d(vx.map((v, i) => Number.isFinite(v) ? Math.hypot(v, vy[i]) : 0), 0.8);
+  seq.batOk = ok > 0.55;
+}
+
+if (typeof module !== 'undefined' && module.exports) module.exports = { NJ, JN, sideMap, cleanRaw, normalize, toPixel, solveBat, detectPhases, analyzeMotion, packRecord, seqFromRecord, alignIndex, lerpFrame, compareRecords, buildDemo, addBatSpeed, NA, angAt, P, mid, gauss1d, deriv, speedSeries };
+
+</script>
+<script>
+(() => {
+const $ = id => document.getElementById(id);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+const fmtDate = ts => new Date(ts).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+
+const st = {
+  mode: 'hit', tab: 'Analyze', hand: { hit: 'R', pitch: 'R' }, slow: 1,
+  seq: null, res: null, source: 'demo', name: 'Sample swing', hasVideo: false, times: null,
+  frame: 0, fpos: 0, playing: false, speed: 0.5,
+  layers: { video: true, skel: true, bat: true, energy: false, ideal: true, past: true },
+  focusFix: null, idealFrames: null, compareRec: null, compareOff: 0, records: [], prefs: {}, recFrameCache: new Map(),
+  heightIn: 70, busy: false, cancel: false, lastTs: 0, energy: null, saved: false,
+};
+try { const p = JSON.parse(localStorage.getItem('swinglab.ui') || '{}'); if (p.hand) st.hand = p.hand; if (p.mode) st.mode = p.mode; if (p.heightIn) st.heightIn = p.heightIn; } catch {}
+const saveUi = () => { try { localStorage.setItem('swinglab.ui', JSON.stringify({ hand: st.hand, mode: st.mode, heightIn: st.heightIn })); } catch {} };
+
+/* ---------------- storage: claude db (per-viewer, private) with local fallback ---------------- */
+const store = {
+  kind: 'local', db: null, col: null, unsub: null,
+  readLocal() { try { return JSON.parse(localStorage.getItem('swinglab.v1') || '{"records":[],"prefs":{}}'); } catch { return { records: [], prefs: {} }; } },
+  writeLocal(o) { try { localStorage.setItem('swinglab.v1', JSON.stringify(o)); return true; } catch { return false; } },
+  init() {
+    const l = this.readLocal(); st.records = l.records || []; st.prefs = l.prefs || {}; renderAll();
+    const use = window.claude && window.claude.use;
+    if (!use) return;
+    (async () => {
+      try {
+        const [db, user] = await Promise.all([window.claude.use('db'), window.claude.use('user')]);
+        const uid = user && await user.id();
+        if (!db || !uid) return;
+        this.db = db; this.col = db.collection('data/users/' + uid); this.kind = 'cloud';
+        $('storeTag').textContent = 'Synced to your account';
+        // move anything saved on this device into the account
+        const local = this.readLocal();
+        for (const r of local.records || []) { try { await this.col.doc(r.id).set(r); } catch {} }
+        if (local.prefs && Object.keys(local.prefs).length) { try { await this.col.doc('prefs').set({ type: 'prefs', ...local.prefs }); } catch {} }
+        if ((local.records || []).length) this.writeLocal({ records: [], prefs: {} });
+        const timer = setTimeout(() => toast('Saved reps are taking a while to load.'), 10000);
+        this.unsub = this.col.onSnapshot(snap => {
+          if (!snap.metadata.fromCache) clearTimeout(timer);
+          const recs = [], prefs = {};
+          for (const d of snap.docs) { const v = d.data(); if (!v) continue; if (d.id === 'prefs') Object.assign(prefs, v); else if (v.kind) recs.push({ ...v, id: d.id }); }
+          st.records = recs; st.prefs = prefs; renderAll();
+        }, () => { clearTimeout(timer); });
+      } catch {}
+    })();
+  },
+  async save(rec) {
+    if (this.kind === 'cloud') { await this.col.doc(rec.id).set(rec); return; }
+    const l = this.readLocal(); l.records = (l.records || []).filter(r => r.id !== rec.id).concat(rec);
+    if (!this.writeLocal(l)) throw new Error('This device ran out of space for saved reps.');
+    st.records = l.records; renderAll();
+  },
+  async remove(id) {
+    if (this.kind === 'cloud') { await this.col.doc(id).delete(); return; }
+    const l = this.readLocal(); l.records = (l.records || []).filter(r => r.id !== id); this.writeLocal(l); st.records = l.records; renderAll();
+  },
+  async setPrefs(p) {
+    st.prefs = { ...st.prefs, ...p };
+    if (this.kind === 'cloud') { const { type, ...rest } = st.prefs; await this.col.doc('prefs').set({ type: 'prefs', ...rest }); return; }
+    const l = this.readLocal(); l.prefs = st.prefs; this.writeLocal(l); renderAll();
+  },
+};
+const recsFor = kind => st.records.filter(r => r.kind === kind).sort((a, b) => b.createdAt - a.createdAt);
+const baselineFor = kind => { const id = st.prefs['base_' + kind]; return st.records.find(r => r.id === id && r.kind === kind) || null; };
+
+/* ---------------- copy per mode ---------------- */
+const MODE = {
+  hit: { title: 'Film a swing', rec: 'Film or upload a swing', hand: 'Bats', key: 'Contact', noun: 'swing', nouns: 'swings', demoName: 'Sample swing',
+    tips: ['Stand 15–20 ft away on the far side of the plate, facing the hitter\'s chest.', 'Hold the phone at waist height and keep it still. A fence or tripod helps.', 'Keep the whole body and the full bat in frame from load to finish.', 'Start recording 2 seconds before the swing. One swing per clip.', 'Use slo-mo if your phone has it, and pick the matching clip speed above.'] },
+  pitch: { title: 'Film a pitch', rec: 'Film or upload a pitch', hand: 'Throws', key: 'Release', noun: 'pitch', nouns: 'pitches', demoName: 'Sample delivery',
+    tips: ['Film from the side, square to the line between the mound and the plate, 20–30 ft away.', 'Hold the phone at chest height and keep it still.', 'Keep the whole body in frame from the set position through the follow-through.', 'Start recording before the leg lift. One pitch per clip.', 'Use slo-mo if your phone has it, and pick the matching clip speed above.'] },
+};
+
+/* ---------------- model ---------------- */
+let model = null, modelP = null;
+async function ensureModel(onMsg) {
+  if (model) return model;
+  if (!modelP) modelP = (async () => {
+    if (!window.tf) throw new Error('The tracking library did not load. Check your connection and reload.');
+    onMsg && onMsg('Starting the tracker…');
+    try { await tf.setBackend('webgl'); } catch { await tf.setBackend('cpu'); }
+    await tf.ready();
+    const m = await tf.loadGraphModel('models/model.json');
+    tf.tidy(() => m.execute(tf.zeros([1, 192, 192, 3], 'int32')));
+    return m;
+  })();
+  try { model = await modelP; } catch (e) { modelP = null; throw e; }
+  return model;
+}
+
+/* ---------------- video analysis ---------------- */
+const vid = $('vid');
+const c192 = document.createElement('canvas'); c192.width = c192.height = 192; const x192 = c192.getContext('2d', { willReadFrequently: true });
+const gcv = document.createElement('canvas'); const gx = gcv.getContext('2d', { willReadFrequently: true });
+function waitEvt(el, ev, ms = 4000) { return new Promise(res => { let t; const h = () => { clearTimeout(t); el.removeEventListener(ev, h); res(true); }; el.addEventListener(ev, h); t = setTimeout(() => { el.removeEventListener(ev, h); res(false); }, ms); }); }
+async function seek(t) { if (Math.abs(vid.currentTime - t) < 1e-4) return; const p = waitEvt(vid, 'seeked', 3000); vid.currentTime = t; await p; }
+async function runPose(crop, src = vid) {
+  x192.fillStyle = '#000'; x192.fillRect(0, 0, 192, 192);
+  x192.drawImage(src, crop.x, crop.y, crop.s, crop.s, 0, 0, 192, 192);
+  const out = tf.tidy(() => model.execute(tf.browser.fromPixels(c192).toInt().expandDims(0)));
+  const d = await out.data(); out.dispose();
+  const k = new Float32Array(51); let sc = 0;
+  for (let j = 0; j < 17; j++) { k[j*3] = crop.x + d[j*3+1]*crop.s; k[j*3+1] = crop.y + d[j*3]*crop.s; k[j*3+2] = d[j*3+2]; sc += d[j*3+2]; }
+  return { k, score: sc/17 };
+}
+function cropFrom(k, W, H) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, c = 0;
+  for (let j = 0; j < 17; j++) if (k[j*3+2] > 0.2) { c++; x0 = Math.min(x0, k[j*3]); x1 = Math.max(x1, k[j*3]); y0 = Math.min(y0, k[j*3+1]); y1 = Math.max(y1, k[j*3+1]); }
+  if (c < 6) return null;
+  const s = Math.min(Math.max(W, H), Math.max(0.3*Math.min(W, H), Math.max(x1-x0, y1-y0)*1.5));
+  return { x: (x0+x1)/2 - s/2, y: (y0+y1)/2 - s/2, s };
+}
+async function poseAt(W, H, prevCrop, src = vid) {
+  const full = { x: (W - Math.max(W, H))/2, y: (H - Math.max(W, H))/2, s: Math.max(W, H) };
+  let r = await runPose(prevCrop || full, src);
+  if (r.score < 0.25 && prevCrop) r = await runPose(full, src);
+  const c = cropFrom(r.k, W, H);
+  if (!prevCrop && c) { const r2 = await runPose(c, src); if (r2.score >= r.score*0.9) r = r2; }
+  return { ...r, crop: r.score > 0.25 ? cropFrom(r.k, W, H) : null };
+}
+function batScores(k, W, H) {
+  const GW = 256, sc = GW / W, GH = Math.round(H*sc);
+  if (gcv.width !== GW || gcv.height !== GH) { gcv.width = GW; gcv.height = GH; }
+  gx.drawImage(vid, 0, 0, GW, GH);
+  const im = gx.getImageData(0, 0, GW, GH).data;
+  const I = (x, y) => { const xi = x|0, yi = y|0; if (xi < 0 || yi < 0 || xi >= GW || yi >= GH) return -1; const o = (yi*GW + xi)*4; return 0.3*im[o] + 0.59*im[o+1] + 0.11*im[o+2]; };
+  const hx = (k[27] + k[30])/2*sc, hy = (k[28] + k[31])/2*sc;
+  const Hg = Math.max(20, (((k[45+1] + k[48+1])/2) - k[1]) / 0.88 * sc);
+  const out = new Float32Array(NA); const r0 = 0.07*Hg, r1 = 0.42*Hg, d = Math.max(2, 0.035*Hg), steps = 18;
+  const elbAng = [7, 8].map(j => Math.atan2(k[j*3+1]*sc - hy, k[j*3]*sc - hx));
+  for (let a = 0; a < NA; a++) {
+    const ang = a*5*Math.PI/180, cx = Math.cos(ang), cy = Math.sin(ang), nx = -cy, ny = cx; let sum = 0;
+    for (let s = 0; s < steps; s++) { const r = r0 + (r1 - r0)*s/(steps-1); const x = hx + cx*r, y = hy + cy*r; const c = I(x, y), s1 = I(x + nx*d, y + ny*d), s2 = I(x - nx*d, y - ny*d); if (c < 0 || s1 < 0 || s2 < 0) continue; sum += Math.max(0, Math.abs(c - (s1 + s2)/2) - Math.abs(s1 - s2)*0.5); }
+    let v = sum/steps;
+    for (const ea of elbAng) { let dd = Math.abs(ang - ea); dd = Math.min(dd, 2*Math.PI - dd); if (dd < 0.35) v *= 0.3; }
+    out[a] = v;
+  }
+  return out;
+}
+
+async function analyzeFile(file, opts = {}) {
+  if (st.busy) return;
+  st.busy = true; st.cancel = false; pause();
+  const kind = st.mode, leadLeft = kind === 'hit' ? st.hand.hit === 'R' : st.hand.pitch === 'R', slow = opts.slow || st.slow;
+  const proc = $('proc'), bar = $('procBar'), txt = $('procTxt');
+  const msg = (t, p) => { txt.textContent = t; if (p != null) bar.style.width = Math.round(p*100) + '%'; };
+  proc.hidden = false; msg('Loading video…', 0);
+  if (st.videoUrl) URL.revokeObjectURL(st.videoUrl);
+  st.videoUrl = URL.createObjectURL(file);
+  st.seq = null; st.res = null; st.hasVideo = true; st.source = 'video'; st.compareRec = null; st.saved = false;
+  st.name = currentPlayer().name + ' · ' + MODE[kind].noun + ' · ' + fmtDate(Date.now()); st.viewHeight = null;
+  setStageMeta(); renderReport();
+  try {
+    vid.src = st.videoUrl; vid.muted = true; vid.playsInline = true;
+    const ok = await waitEvt(vid, 'loadeddata', 15000);
+    if (!ok || !vid.videoWidth) throw new Error('This video could not be opened here. Try a different clip, or record with the camera button.');
+    try { await vid.play(); vid.pause(); } catch {}
+    if (!Number.isFinite(vid.duration) || vid.duration <= 0) { // clips recorded in the browser often report no length until seeked to the end
+      const p = waitEvt(vid, 'durationchange', 3000); try { vid.currentTime = 1e7; } catch {} await p; await seek(0);
+    }
+    const vdur = Number.isFinite(vid.duration) && vid.duration > 0 ? vid.duration : (opts.duration || 0);
+    if (!vdur) throw new Error('This video has no readable length. Try recording again or upload it from your library.');
+    sizeStage();
+    await ensureModel(t => msg(t, 0.02));
+    const W = vid.videoWidth, H = vid.videoHeight, dur = Math.min(vdur, 30*slow);
+    const realDur = dur/slow;
+    let tA = 0, tB = dur;
+    if (realDur > 3.6) {
+      // coarse pass: find the moment of fastest hand movement
+      const step = slow/6, ts = [], ks = []; let crop = null;
+      for (let t = 0; t < dur; t += step) {
+        if (st.cancel) throw new Error('cancel');
+        await seek(t); const r = await poseAt(W, H, crop); crop = r.crop; ts.push(t); ks.push(r.k);
+        drawLive(r.k, W, H); msg('Finding the ' + MODE[kind].noun + '…', 0.05 + 0.25*t/dur);
+      }
+      const sp = ks.map((k, i) => { if (!i) return 0; const p = ks[i-1]; const v = j => k[j*3+2] > 0.2 && p[j*3+2] > 0.2 ? Math.hypot(k[j*3]-p[j*3], k[j*3+1]-p[j*3+1]) : 0; return Math.max(v(9), v(10)); });
+      const pk = ts[sp.indexOf(Math.max(...sp))] || dur/2;
+      const pre = (kind === 'hit' ? 1.9 : 2.4)*slow, post = (kind === 'hit' ? 1.0 : 1.1)*slow;
+      tA = Math.max(0, pk - pre); tB = Math.min(dur, pk + post);
+    }
+    const perReal = slow > 1 ? 60 : 30, mstep = slow/perReal;
+    const times = []; for (let t = tA; t <= tB + 1e-6; t += mstep) times.push(t);
+    const raw = [], scores = [], handsPx = []; let crop = null, found = 0;
+    for (let i = 0; i < times.length; i++) {
+      if (st.cancel) throw new Error('cancel');
+      await seek(times[i]);
+      const r = await poseAt(W, H, crop); crop = r.crop; raw.push(r.k); if (r.score > 0.3) found++;
+      if (kind === 'hit') scores.push(r.score > 0.2 ? batScores(r.k, W, H) : null);
+      drawLive(r.k, W, H);
+      msg('Tracking joints… frame ' + (i+1) + ' of ' + times.length, 0.3 + 0.65*(i+1)/times.length);
+    }
+    if (found < times.length*0.4) throw new Error('Could not find a player in most frames. Keep the whole body in frame, in good light, with nobody else close by.');
+    msg('Scoring mechanics…', 0.97);
+    const clean = cleanRaw(raw, 1.0);
+    const nz = normalize(clean, leadLeft);
+    const seq = { ...nz, fps: perReal, slow, W, H, kind };
+    if (kind === 'hit') {
+      const path = solveBat(scores, null, slow, nz.H);
+      seq.batTips = clean.map((k, i) => { const p = path[i]; if (!scores[i]) return null; const hx = (k[27] + k[30])/2, hy = (k[28] + k[31])/2; const a = p.angleIdx*5*Math.PI/180; const L = 0.40*nz.H; const tx = hx + Math.cos(a)*L, ty = hy + Math.sin(a)*L; return { x: (tx - nz.originX)*nz.fwd/nz.H, y: (ty - nz.groundY)/nz.H, c: p.conf }; });
+      addBatSpeed(seq);
+    }
+    st.times = times; st.seq = seq;
+    st.res = analyzeMotion(seq, kind);
+    afterAnalysis();
+    if (nz.autoSwapped) toast('Lead leg looked like the other side, so the tracker used the leg that strides. Check the Bats / Throws setting.');
+  } catch (e) {
+    if (e.message === 'cancel') { loadDemo(); toast('Analysis canceled.'); }
+    else { loadDemo(); toast(e.message || 'Something went wrong while analyzing.'); }
+  } finally { proc.hidden = true; st.busy = false; }
+}
+function drawLive(k, W, H) {
+  const { ctx, w, h } = canvasCtx(); ctx.clearRect(0, 0, w, h);
+  const fit = videoFit(W, H, w, h); const f = new Float32Array(34); for (let j = 0; j < 17; j++) { f[j*2] = k[j*3]; f[j*2+1] = k[j*3+1]; }
+  drawSkel(ctx, f, (x, y) => [fit.x + x*fit.s, fit.y + y*fit.s], { color: css('--lead'), scale: fit.s*(H*0.9), dim: k });
+}
+
+/* ---------------- demo + library sources ---------------- */
+function loadDemo() {
+  pause();
+  const seq = buildDemo(st.mode);
+  st.seq = seq; st.res = analyzeMotion(seq, st.mode); st.source = 'demo'; st.hasVideo = false; st.times = null; st.name = MODE[st.mode].demoName; st.saved = false; st.viewHeight = null; st.recId = null;
+  vid.removeAttribute('src'); vid.load();
+  st.compareRec = null;
+  afterAnalysis(true);
+}
+function loadRecord(rec) {
+  pause();
+  const seq = seqFromRecord(rec);
+  st.seq = seq; st.res = analyzeMotion(seq, rec.kind); st.source = 'library'; st.hasVideo = false; st.times = null; st.name = rec.name; st.saved = true; st.recId = rec.id; st.viewHeight = rec.heightIn || null;
+  vid.removeAttribute('src'); vid.load();
+  st.compareRec = null;
+  afterAnalysis(true);
+}
+function afterAnalysis(quiet) {
+  const r = st.res;
+  st.focusFix = null; st.idealFrames = r.ideal;
+  computeEnergy();
+  st.frame = r.phases.start; st.fpos = st.frame;
+  if (!st.compareRec) { const b = baselineFor(st.mode); if (b && b.id !== st.recId && st.source !== 'demo') st.compareRec = b; }
+  prepCompare();
+  setStageMeta(); sizeStage(); buildScrub(); renderReport(); seekFrame(r.phases.key);
+  if (!quiet) { setTab('Analyze'); toast('Analysis ready. Score ' + r.overall + '.'); }
+}
+function computeEnergy() {
+  const F = st.seq.frames, fps = st.seq.fps, n = F.length;
+  const sp = F.map((f, i) => { const a = F[Math.max(0, i-1)], b = F[Math.min(n-1, i+1)]; const dt = (Math.min(n-1, i+1) - Math.max(0, i-1))/fps || 1; const o = new Float32Array(17); for (let j = 0; j < 17; j++) o[j] = Math.hypot(b[j*2]-a[j*2], b[j*2+1]-a[j*2+1])/dt; return o; });
+  const all = []; sp.forEach(o => o.forEach(v => all.push(v))); all.sort((a, b) => a - b);
+  const ref = all[Math.floor(all.length*0.97)] || 1;
+  st.energy = sp.map(o => o.map(v => Math.min(1, v/ref)));
+}
+function prepCompare() {
+  const rec = st.compareRec; if (!rec || rec.kind !== st.mode) { st.compareRec = null; return; }
+  if (!st.recFrameCache.has(rec.id)) st.recFrameCache.set(rec.id, unpackFrames(rec));
+  const rf = st.recFrameCache.get(rec.id); const S1 = sideMap(st.seq.leadLeft), S2 = sideMap(rec.leadLeft);
+  const cur = st.seq.frames[st.res.phases.start];
+  st.compareOff = cur[S1.bAn*2] - rf[0][S2.bAn*2];
+}
+function pastFrameAt(i) {
+  const rec = st.compareRec; if (!rec) return null;
+  const rf = st.recFrameCache.get(rec.id); const fi = alignIndex(st.res.phases.list, rec.phases, i, rf.length);
+  const f = lerpFrame(rf, fi); for (let j = 0; j < 17; j++) f[j*2] += st.compareOff; return f;
+}
+
+/* ---------------- drawing ---------------- */
+const cv = $('cv');
+function canvasCtx(canvas = cv) {
+  const dpr = Math.min(2, window.devicePixelRatio || 1); const r = canvas.getBoundingClientRect();
+  const W = Math.max(1, Math.round(r.width*dpr)), H = Math.max(1, Math.round(r.height*dpr));
+  if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+  const ctx = canvas.getContext('2d'); return { ctx, w: W, h: H, dpr };
+}
+function videoFit(vw, vh, w, h) { const s = Math.min(w/vw, h/vh); return { s, x: (w - vw*s)/2, y: (h - vh*s)/2 }; }
+const BONES = [[5,7,'l'],[7,9,'l'],[6,8,'b'],[8,10,'b'],[5,6,'c'],[5,11,'c'],[6,12,'c'],[11,12,'c'],[11,13,'l'],[13,15,'l'],[12,14,'b'],[14,16,'b']];
+function heat(t) {
+  const stops = [[0, [43,76,126]], [0.35, [63,167,245]], [0.6, [232,180,74]], [0.85, [240,101,79]], [1, [255,241,214]]];
+  for (let i = 1; i < stops.length; i++) if (t <= stops[i][0]) { const [a, ca] = stops[i-1], [b, cb] = stops[i]; const u = (t - a)/(b - a); return `rgb(${ca.map((v, k) => Math.round(v + (cb[k]-v)*u)).join(',')})`; }
+  return 'rgb(255,241,214)';
+}
+// opts: {color, colors:{l,b,c}, dash, alpha, scale (px per body height), energy (Float32Array 17), leadLeft, dim}
+function drawSkel(ctx, f, map, o) {
+  const S = sideMap(o.leadLeft !== false);
+  const sideOf = j => { if (j <= 4) return 'c'; const isLeft = j % 2 === 1; return isLeft === (o.leadLeft !== false) ? 'l' : 'b'; };
+  const lw = Math.max(2, o.scale*0.012);
+  ctx.save(); ctx.globalAlpha = o.alpha ?? 1; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  if (o.dash) ctx.setLineDash([lw*2.2, lw*1.6]);
+  const pt = j => map(f[j*2], f[j*2+1]);
+  const colOf = (a, b, side) => o.energy ? heat((o.energy[a] + o.energy[b])/2) : o.color || (o.colors ? o.colors[side] : '#fff');
+  for (const [a, b, tag] of BONES) {
+    if (o.dim && (o.dim[a*3+2] < 0.15 || o.dim[b*3+2] < 0.15)) continue;
+    const side = tag === 'c' ? 'c' : sideOf(b);
+    const p = pt(a), q = pt(b); ctx.strokeStyle = colOf(a, b, side); ctx.lineWidth = side === 'c' ? lw*0.85 : lw*1.15;
+    ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.stroke();
+  }
+  // neck + head
+  const sm = map((f[10]+f[12])/2, (f[11]+f[13])/2), nz = pt(0);
+  ctx.strokeStyle = o.energy ? heat(o.energy[0]) : o.color || (o.colors ? o.colors.c : '#fff'); ctx.lineWidth = lw*0.85;
+  ctx.beginPath(); ctx.moveTo(sm[0], sm[1]); ctx.lineTo(nz[0] + (sm[0]-nz[0])*0.35, nz[1] + (sm[1]-nz[1])*0.35); ctx.stroke();
+  ctx.beginPath(); ctx.arc(nz[0], nz[1], o.scale*0.055, 0, Math.PI*2); ctx.stroke();
+  // joints
+  ctx.setLineDash([]);
+  for (const j of [5,6,7,8,9,10,11,12,13,14,15,16]) {
+    if (o.dim && o.dim[j*3+2] < 0.15) continue;
+    const p = pt(j); const r = Math.max(2.5, o.scale*(j === 9 || j === 10 ? 0.014 : 0.011));
+    ctx.beginPath(); ctx.arc(p[0], p[1], r, 0, Math.PI*2);
+    if (o.dash) { ctx.fillStyle = o.color; ctx.globalAlpha = (o.alpha ?? 1)*0.9; ctx.fill(); }
+    else { ctx.fillStyle = o.energy ? heat(o.energy[j]) : o.color || (o.colors ? o.colors[sideOf(j)] : '#fff'); ctx.fill(); ctx.lineWidth = Math.max(1, lw*0.35); ctx.strokeStyle = 'rgba(7,12,18,.8)'; ctx.stroke(); }
+  }
+  ctx.restore();
+}
+function arrow(ctx, a, b, col, w) {
+  const dx = b[0]-a[0], dy = b[1]-a[1], L = Math.hypot(dx, dy); if (L < 6) return;
+  const ux = dx/L, uy = dy/L, hs = Math.min(10, L*0.4) + w;
+  ctx.save(); ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = w; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0] - ux*hs*0.6, b[1] - uy*hs*0.6); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(b[0], b[1]); ctx.lineTo(b[0] - ux*hs - uy*hs*0.5, b[1] - uy*hs + ux*hs*0.5); ctx.lineTo(b[0] - ux*hs + uy*hs*0.5, b[1] - uy*hs - ux*hs*0.5); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+let viewBox = null;
+function computeViewBox() {
+  const r = st.res, F = st.seq.frames; let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = 0.02;
+  const take = f => { for (let j = 0; j < 17; j++) { x0 = Math.min(x0, f[j*2]); x1 = Math.max(x1, f[j*2]); y0 = Math.min(y0, f[j*2+1]); y1 = Math.max(y1, f[j*2+1]); } };
+  for (let i = r.phases.start; i <= r.phases.end; i++) { take(F[i]); take(r.ideal[i]); const b = st.seq.batTips && st.seq.batTips[i]; if (b && b.c > 0.2) { x0 = Math.min(x0, b.x); x1 = Math.max(x1, b.x); y0 = Math.min(y0, b.y); y1 = Math.max(y1, b.y); } }
+  const pad = 0.12; viewBox = { x0: x0 - pad, x1: x1 + pad, y0: y0 - pad, y1: y1 + pad*0.6 };
+}
+function stageMap(w, h) {
+  if (st.hasVideo) { const fit = videoFit(st.seq.W, st.seq.H, w, h); return { map: (x, y) => { const p = toPixel(st.seq, x, y); return [fit.x + p[0]*fit.s, fit.y + p[1]*fit.s]; }, scale: st.seq.H*fit.s }; }
+  const vb = viewBox; const s = Math.min(w/(vb.x1 - vb.x0), h/(vb.y1 - vb.y0)); const ox = (w - (vb.x1 - vb.x0)*s)/2 - vb.x0*s, oy = (h - (vb.y1 - vb.y0)*s)/2 - vb.y0*s;
+  return { map: (x, y) => [ox + x*s, oy + y*s], scale: s };
+}
+function draw() {
+  const { ctx, w, h, dpr } = canvasCtx(); ctx.clearRect(0, 0, w, h);
+  if (!st.seq || !st.res) return;
+  const i = Math.round(st.frame), r = st.res, f = st.seq.frames[i];
+  const { map, scale } = stageMap(w, h);
+  if (st.hasVideo && st.layers.video) { ctx.fillStyle = 'rgba(7,12,18,.32)'; ctx.fillRect(0, 0, w, h); }
+  if (!st.hasVideo || !st.layers.video) {
+    // field: ground line + chalk grid in body heights
+    ctx.save(); ctx.strokeStyle = 'rgba(233,238,244,.07)'; ctx.lineWidth = 1*dpr;
+    const g0 = map(-3, 0), step = scale*0.25;
+    for (let x = ((g0[0] % step) + step) % step; x < w; x += step) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+    for (let y = g0[1]; y > 0; y -= step) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+    ctx.strokeStyle = 'rgba(233,238,244,.35)'; ctx.lineWidth = 2*dpr; ctx.beginPath(); ctx.moveTo(0, g0[1]); ctx.lineTo(w, g0[1]); ctx.stroke();
+    ctx.fillStyle = 'rgba(233,238,244,.45)'; ctx.font = `${11*dpr}px ${css('--f-mono') || 'monospace'}`; ctx.fillText(st.mode === 'hit' ? 'PITCHER →' : 'PLATE →', w - 86*dpr, g0[1] + 16*dpr);
+    ctx.restore();
+  }
+  const colors = { l: css('--lead'), b: css('--back'), c: '#E9EEF4' };
+  // past rep
+  if (st.layers.past && st.compareRec) { const pf = pastFrameAt(i); if (pf) drawSkel(ctx, pf, map, { color: css('--past'), scale, alpha: 0.85, leadLeft: st.compareRec.leadLeft }); }
+  // fixed form ghost + arrows
+  const ideal = st.idealFrames;
+  if (st.layers.ideal && ideal && st.res.fixes.length) {
+    const g = ideal[i]; const gcol = css('--ghost');
+    drawSkel(ctx, g, map, { color: gcol, dash: true, scale, alpha: 0.95, leadLeft: st.seq.leadLeft });
+    for (let j = 0; j < 17; j++) { if (j > 0 && j < 5) continue; const d = Math.hypot(g[j*2]-f[j*2], g[j*2+1]-f[j*2+1]); if (d > 0.025) arrow(ctx, map(f[j*2], f[j*2+1]), map(g[j*2], g[j*2+1]), gcol, Math.max(1.5, scale*0.006)); }
+  }
+  // bat path
+  const tips = st.seq.batTips;
+  if (st.layers.bat && tips && st.mode === 'hit') {
+    ctx.save(); ctx.lineCap = 'round';
+    const a = Math.max(r.phases.start, i - 14);
+    for (let k = a + 1; k <= i; k++) { const p = tips[k-1], q = tips[k]; if (!p || !q || p.c < 0.2 || q.c < 0.2) continue; const t = (k - a)/(i - a + 1); ctx.strokeStyle = `rgba(232,180,74,${0.15 + 0.7*t})`; ctx.lineWidth = Math.max(2, scale*0.01)*(0.5 + t); const P1 = map(p.x, p.y), Q1 = map(q.x, q.y); ctx.beginPath(); ctx.moveTo(P1[0], P1[1]); ctx.lineTo(Q1[0], Q1[1]); ctx.stroke(); }
+    const b = tips[i]; if (b && b.c > 0.2) { const hnd = map((f[18]+f[20])/2, (f[19]+f[21])/2), tp = map(b.x, b.y); ctx.strokeStyle = '#D9A55B'; ctx.lineWidth = Math.max(3, scale*0.022); ctx.beginPath(); ctx.moveTo(hnd[0], hnd[1]); ctx.lineTo(tp[0], tp[1]); ctx.stroke(); ctx.strokeStyle = 'rgba(7,12,18,.7)'; ctx.lineWidth = Math.max(1, scale*0.004); ctx.stroke(); }
+    ctx.restore();
+  }
+  if (st.layers.skel) drawSkel(ctx, f, map, { colors, scale, leadLeft: st.seq.leadLeft, energy: st.layers.energy ? st.energy[i] : null });
+  // hud
+  const ph = currentPhase(i); $('hudPhase').textContent = ph;
+  const key = r.phases.key; $('hudTime').textContent = ((i - key)/st.seq.fps*1000 >= 0 ? '+' : '') + Math.round((i - key)/st.seq.fps*1000) + ' ms';
+  $('fNo').textContent = (i - r.phases.start + 1) + ' / ' + (r.phases.end - r.phases.start + 1);
+  const sc = $('scrub'); if (+sc.value !== i) sc.value = i;
+  document.querySelectorAll('#phaseChips .chip').forEach(c => c.setAttribute('aria-current', c.dataset.name === ph ? 'true' : 'false'));
+  drawChart();
+}
+function currentPhase(i) { let nm = st.res.phases.list[0][0]; for (const [n, k] of st.res.phases.list) if (i >= k) nm = n; return nm; }
+
+/* ---------------- kinematic sequence chart ---------------- */
+function drawChart() {
+  const el = $('chartCv'); if (!el || !st.res) return;
+  const { ctx, w, h, dpr } = canvasCtx(el); ctx.clearRect(0, 0, w, h);
+  const r = st.res, a = r.phases.start, b = r.phases.end, fps = st.seq.fps;
+  const padL = 8*dpr, padR = 8*dpr, padT = 14*dpr, padB = 22*dpr;
+  const X = i => padL + (i - a)/(b - a)*(w - padL - padR), Y = v => padT + (1 - v)*(h - padT - padB);
+  ctx.strokeStyle = css('--line'); ctx.lineWidth = 1*dpr; ctx.beginPath(); ctx.moveTo(padL, Y(0)); ctx.lineTo(w - padR, Y(0)); ctx.stroke();
+  ctx.fillStyle = css('--ink-2'); ctx.font = `${10.5*dpr}px ${css('--f-mono') || 'monospace'}`; ctx.textAlign = 'center';
+  const key = r.phases.key;
+  for (let ms = -1000; ms <= 1000; ms += 100) { const i = key + ms/1000*fps; if (i < a || i > b) continue; const x = X(i); ctx.fillRect(x - 0.5*dpr, Y(0), 1*dpr, 4*dpr); if (ms % 200 === 0) ctx.fillText(ms === 0 ? MODE[st.mode].key : (ms > 0 ? '+' : '') + ms, x, h - 6*dpr); }
+  ctx.setLineDash([4*dpr, 4*dpr]); ctx.strokeStyle = css('--ink-2'); ctx.beginPath(); ctx.moveTo(X(key), padT - 6*dpr); ctx.lineTo(X(key), Y(0)); ctx.stroke(); ctx.setLineDash([]);
+  const cols = segColors();
+  r.kin.segs.forEach((s, si) => {
+    const mx = Math.max(1e-6, ...s.series.slice(a, b + 1)); ctx.strokeStyle = cols[si]; ctx.lineWidth = 2*dpr; ctx.beginPath();
+    for (let i = a; i <= b; i++) { const x = X(i), y = Y(s.series[i]/mx); i === a ? ctx.moveTo(x, y) : ctx.lineTo(x, y); } ctx.stroke();
+    const px = X(s.peak), py = Y(s.series[s.peak]/mx); ctx.fillStyle = cols[si]; ctx.beginPath(); ctx.arc(px, py, 4.5*dpr, 0, Math.PI*2); ctx.fill(); ctx.strokeStyle = css('--surface'); ctx.lineWidth = 2*dpr; ctx.stroke();
+  });
+  const x = X(Math.round(st.frame)); ctx.strokeStyle = css('--accent'); ctx.lineWidth = 2*dpr; ctx.beginPath(); ctx.moveTo(x, padT - 8*dpr); ctx.lineTo(x, Y(0)); ctx.stroke();
+}
+const segColors = () => [css('--c-hips'), css('--c-torso'), css('--c-arm'), css('--c-tip')];
+
+/* ---------------- playback ---------------- */
+function frameAtTime(t) { const T = st.times; if (!T || T.length < 2) return 0; const step = T[1] - T[0]; return Math.max(0, Math.min(T.length - 1, Math.round((t - T[0])/step))); }
+function seekFrame(i) {
+  const r = st.res; if (!r) return; i = Math.max(r.phases.start, Math.min(r.phases.end, Math.round(i)));
+  st.frame = i; st.fpos = i;
+  if (st.hasVideo && st.times) { try { vid.currentTime = st.times[i]; } catch {} }
+  draw();
+}
+function play() {
+  if (!st.res || st.busy) return; st.playing = true; setPlayIcon();
+  if (st.frame >= st.res.phases.end) seekFrame(st.res.phases.start);
+  if (st.hasVideo) { vid.playbackRate = st.speed; vid.play().catch(() => {}); }
+  st.lastTs = performance.now();
+}
+function pause() { st.playing = false; setPlayIcon(); if (!vid.paused) vid.pause(); }
+function setPlayIcon() { $('bPlay').setAttribute('aria-label', st.playing ? 'Pause' : 'Play'); $('icoPlay').innerHTML = st.playing ? '<path d="M6 4h4v16H6zM14 4h4v16h-4z"/>' : '<path d="M7 4v16l13-8z"/>'; }
+function loop(ts) {
+  if (st.playing && st.res) {
+    const r = st.res;
+    if (st.hasVideo) {
+      const i = frameAtTime(vid.currentTime); st.frame = i;
+      if (i >= r.phases.end || vid.ended) { vid.pause(); seekFrame(r.phases.start); setTimeout(() => { if (st.playing) vid.play().catch(() => {}); }, 350); }
+    } else {
+      const dt = (ts - st.lastTs)/1000; st.fpos += dt*st.seq.fps*st.speed;
+      if (st.fpos > r.phases.end + st.seq.fps*0.4) st.fpos = r.phases.start;
+      st.frame = Math.min(r.phases.end, st.fpos);
+    }
+    draw();
+  }
+  st.lastTs = ts; drawGameDay(ts); compareLoop(ts);
+  requestAnimationFrame(loop);
+}
+
+/* ---------------- stage + controls ---------------- */
+function sizeStage() {
+  const stg = $('stage');
+  if (st.hasVideo && vid.videoWidth) { stg.style.aspectRatio = vid.videoWidth + ' / ' + vid.videoHeight; }
+  else stg.style.aspectRatio = '4 / 5';
+  vid.style.opacity = st.hasVideo && st.layers.video ? '1' : '0';
+  if (st.res) computeViewBox();
+}
+function setStageMeta() {
+  $('srcName').textContent = st.name;
+  $('srcTag').textContent = st.source === 'demo' ? 'Sample data' : st.source === 'library' ? 'From library' : 'Your video';
+  document.querySelector('[data-layer="video"]').hidden = !st.hasVideo;
+  document.querySelector('[data-layer="bat"]').hidden = st.mode !== 'hit';
+  document.querySelector('[data-layer="past"]').hidden = !st.compareRec;
+  const lg = [`<span><i style="background:var(--lead)"></i>Lead side</span>`, `<span><i style="background:var(--back)"></i>${st.mode === 'hit' ? 'Back side' : 'Throwing side'}</span>`];
+  if (st.res && st.res.fixes.length) lg.push(`<span><i class="dash"></i>Fixed form</span>`);
+  if (st.compareRec) lg.push(`<span><i style="background:var(--past)"></i>${esc(st.compareRec.name)}</span>`);
+  if (st.layers.energy) lg.push(`<span><i style="background:linear-gradient(90deg,#2B4C7E,#3FA7F5,#E8B44A,#F0654F)"></i>Segment speed</span>`);
+  $('legend').innerHTML = lg.join('');
+}
+function buildScrub() {
+  const r = st.res, sc = $('scrub'); sc.min = r.phases.start; sc.max = r.phases.end; sc.value = st.frame;
+  const span = r.phases.end - r.phases.start || 1;
+  $('ticks').innerHTML = r.phases.list.map(([n, i]) => `<i class="${i === r.phases.key ? 'key' : ''}" style="left:${(i - r.phases.start)/span*100}%" title="${esc(n)}"></i>`).join('');
+  $('phaseChips').innerHTML = `<span class="row-lbl" style="align-self:center;margin-right:4px">Phase</span>` + r.phases.list.map(([n]) => `<button class="chip phase" data-name="${esc(n)}">${esc(n)}</button>`).join('');
+}
+
+/* ---------------- report ---------------- */
+function rangeBar(m, past) {
+  const span = (m.hi - m.lo) || 1; let lo = m.lo - span*0.8, hi = m.hi + span*0.8;
+  const vals = [m.value, past].filter(Number.isFinite); for (const v of vals) { lo = Math.min(lo, v - span*0.1); hi = Math.max(hi, v + span*0.1); }
+  const X = v => ((v - lo)/(hi - lo)*100).toFixed(1) + '%';
+  return `<div class="range" aria-hidden="true"><div class="track"></div><div class="band" style="left:${X(m.lo)};width:calc(${X(m.hi)} - ${X(m.lo)})"></div>${Number.isFinite(past) ? `<div class="mk past" style="left:${X(past)}"></div>` : ''}<div class="mk" style="left:${X(m.value)}"></div></div>`;
+}
+const mph = v => Number.isFinite(v) && v > 0 ? (v*(st.viewHeight || st.heightIn)*0.0254*2.23694).toFixed(0) + ' mph' : '—';
+const fmtNum = (v, unit) => { const r = Math.abs(v) >= 100 || unit === 'ms' || unit === '%' || Number.isInteger(v) ? Math.round(v) : Math.round(v*10)/10; return Object.is(r, -0) ? 0 : r; };
+const fmtVal = (v, unit) => !Number.isFinite(v) ? '—' : fmtNum(v, unit) + (unit === '°' ? '°' : unit === '% ht' ? '% of height' : ' ' + unit);
+const fmtShort = (v, unit) => !Number.isFinite(v) ? '—' : fmtNum(v, unit) + (unit === '°' ? '°' : unit === '% ht' ? '%' : unit === '%' ? '%' : ' ' + unit);
+const showVal = m => m.key === 'seq' ? Math.round(m.value) + '% in order' : m.key === 'balance' ? (m.value < m.lo ? 'Falling back' : m.value > m.hi ? 'Falling forward' : 'Centered') : fmtVal(m.value, m.unit);
+function gradeWord(s) { return s >= 88 ? 'Game ready' : s >= 75 ? 'Solid, with fixes' : s >= 60 ? 'Needs work' : 'Rebuild the basics'; }
+function renderReport() {
+  const el = $('report');
+  if (!st.res) { el.innerHTML = `<div class="card"><div class="eyebrow">Scouting report</div><h2>Analyzing…</h2><p class="muted">The report appears here when tracking finishes.</p></div>`; return; }
+  const r = st.res, kind = r.kind, M = MODE[kind];
+  const fixes = r.metrics.filter(m => m.status === 'fix' || m.status === 'watch').sort((a, b) => a.score - b.score);
+  const past = st.compareRec ? st.compareRec.metrics : null;
+  const cols = segColors();
+  const segIdx = Object.fromEntries(r.kin.segs.map((s, i) => [s.name, i]));
+  const info = st.seq.info || {};
+  const recOpts = recsFor(kind).filter(x => x.id !== st.recId);
+  const cmp = st.compareRec ? compareRecords(r.metrics, st.compareRec) : null;
+  const offs = cmp ? cmp.filter(c => c.off) : [];
+  el.innerHTML = `
+  <div class="card">
+    <div class="score-card">
+      <div class="scoreboard">${r.overall}<small>OF 100</small></div>
+      <div class="score-txt">
+        <div class="eyebrow">Mechanics score · ${esc(kind === 'hit' ? 'Hitting' : 'Pitching')}</div>
+        <h2>${gradeWord(r.overall)}</h2>
+        <p class="muted small">${fixes.length ? `${fixes.length} thing${fixes.length > 1 ? 's' : ''} to work on. Biggest: <b style="color:var(--ink)">${esc(fixes[0].label.toLowerCase())}</b>.` : 'Every check is inside the target range.'}</p>
+      </div>
+    </div>
+    ${st.source === 'demo' ? `<p class="note" style="margin-top:12px">This is a built-in sample ${M.noun} so you can see how the report works. Record or choose a video above to analyze your own.</p>` : ''}
+  </div>
+
+  ${cmp ? `<div class="card">
+    <div class="eyebrow">Compared with</div>
+    <h2>${esc(st.compareRec.name)}</h2>
+    <p class="small ${offs.length ? '' : 'muted'}" style="margin-bottom:10px">${offs.length ? `${offs.length} check${offs.length > 1 ? 's are' : ' is'} out of line with that rep: ${offs.slice(0, 3).map(o => esc(o.label.toLowerCase())).join(', ')}.` : `Nothing is out of line with that rep. Your ${M.noun} matches.`}</p>
+    <div class="tbl"><table class="delta"><thead><tr><th>Check</th><th style="text-align:right">Then</th><th style="text-align:right">Now</th><th style="text-align:right">Change</th></tr></thead><tbody>
+    ${cmp.map(c => `<tr class="${c.big ? 'big' : c.off ? 'off' : ''}"><td>${esc(c.label)}</td><td class="num">${fmtShort(c.then, c.unit)}</td><td class="num">${fmtShort(c.now, c.unit)}</td><td class="num">${fmtNum(c.delta, c.unit) > 0 ? '+' : ''}${fmtShort(c.delta, c.unit)}</td></tr>`).join('')}
+    </tbody></table></div>
+    <p class="note" style="margin-top:8px">The purple skeleton on the video is that rep, lined up phase by phase. Orange and red rows changed more than normal rep-to-rep variation. Distances are percent of your height.</p>
+  </div>` : ''}
+
+  <div class="card">
+    <div class="eyebrow">Energy flow</div>
+    <h2>Kinematic sequence</h2>
+    <p class="muted small">Speed of each body segment through the ${M.noun}. Power transfers best when each segment peaks after the one before it, from the ground up.</p>
+    <div class="chart-wrap" style="margin-top:10px"><canvas id="chartCv" aria-label="Segment speed over time"></canvas></div>
+    <div class="order">${r.kin.order.map((n, k) => `${k ? '<span class="muted">→</span>' : ''}<b style="background:${cols[segIdx[n]]}">${esc(n)}</b>`).join('')}<span class="pill ${r.kin.inOrder ? 'good' : 'fix'}" style="margin-left:6px">${r.kin.inOrder ? 'In order' : 'Out of order'}</span></div>
+    <div class="kv" style="margin-top:12px">
+      ${kind === 'hit' ? `<div><b>${mph(info.handSpeed)}</b><span>Peak hand speed</span></div>
+      <div><b>${mph(info.batSpeed)}</b><span>Peak barrel speed${info.batSpeed ? ', estimate' : ''}</span></div>` :
+      `<div><b>${Number.isFinite(info.armSlot) ? Math.round(info.armSlot) + '°' : '—'}</b><span>Arm slot at release (0° sidearm, 90° over the top)</span></div>
+      <div><b>${mph(info.handSpeed)}</b><span>Hand speed at release, estimate</span></div>`}
+    </div>
+    <p class="note" style="margin-top:8px">Tap <b>Energy flow</b> under the video to color each body part by its speed and watch the wave move up the body.</p>
+  </div>
+
+  <div class="card">
+    <div class="eyebrow">Checkpoints</div>
+    <h2>What to adjust</h2>
+    <div class="metrics">
+      ${r.metrics.slice().sort((a, b) => (a.score ?? 101) - (b.score ?? 101)).map(m => `
+      <div class="metric">
+        <div class="m-head"><h3>${esc(m.label)}</h3><span class="pill ${m.status}">${m.status === 'good' ? 'On target' : m.status === 'watch' ? 'Watch' : m.status === 'fix' ? 'Fix' : 'No read'}</span></div>
+        <div class="val">${showVal(m)}</div>
+        ${m.key !== 'seq' && m.key !== 'balance' ? rangeBar(m, past ? past[m.key] : null) : ''}
+        <div class="m-body">
+          ${m.key !== 'seq' && m.key !== 'balance' ? `<span class="muted small">Target ${fmtVal(m.lo, m.unit)} to ${fmtVal(m.hi, m.unit)} · at ${esc(m.phase.toLowerCase())}</span>` : ''}
+          ${m.cue ? `<p>${esc(m.cue)}</p>` : ''}
+          ${m.drill ? `<p class="drill"><b>Drill:</b> ${esc(m.drill)}</p>` : ''}
+          <div class="m-actions">
+            <button class="linkbtn" data-goto="${esc(m.phase)}">Go to ${esc(m.phase.toLowerCase())}</button>
+            ${r.fixes.includes(m.key) ? `<button class="linkbtn" data-focus="${m.key}">${st.focusFix === m.key ? 'Show all fixes' : 'Show only this fix'}</button>` : ''}
+          </div>
+        </div>
+      </div>`).join('')}
+    </div>
+    <p class="note" style="margin-top:6px">The dashed green skeleton is your own motion with these fixes applied. Arrows show where each joint should move.</p>
+  </div>
+
+  <div class="card">
+    <div class="eyebrow">Library</div>
+    <h2>${st.source === 'library' ? 'Saved rep' : 'Save this rep'}</h2>
+    ${st.source === 'library' ? `<p class="muted small">This rep is in your library.</p><div style="margin-top:10px"><button class="btn" data-cmpa="${esc(st.recId || '')}">Compare side by side</button></div>` : st.source === 'demo' ? `<p class="muted small">Analyze your own ${M.noun} to save it. Saved reps keep the skeleton and numbers so you can compare future reps against them.</p>` : st.saved ? `<p class="small">Saved to your library under ${esc(currentPlayer().name)}.</p><div style="margin-top:10px"><button class="btn" data-cmpa="${esc(st.recId || '')}">Compare with another player</button></div>` : `
+    <div class="save-row"><input type="text" id="saveName" value="${esc(st.name)}" aria-label="Name for this rep" maxlength="60"><button class="btn primary" id="saveBtn">Save</button></div>
+    <label class="check" style="margin-top:10px"><input type="checkbox" id="saveBase" ${baselineFor(kind) ? '' : 'checked'}> Make this my baseline ${M.noun}</label>
+    <p class="note" style="margin-top:6px">Saves the skeleton, phases and numbers. The video stays on your phone.${store.kind === 'local' ? ' Saved on this device.' : ''}</p>`}
+    <div class="opt" style="margin-top:14px"><label for="cmpSel">Compare with</label>
+      <select id="cmpSel" style="flex:1;min-width:0"><option value="">Nothing</option>${recOpts.map(x => `<option value="${esc(x.id)}" ${st.compareRec && st.compareRec.id === x.id ? 'selected' : ''}>${esc(x.name)}${st.prefs['base_' + kind] === x.id ? ' ★' : ''} · ${x.overall}</option>`).join('')}</select>
+    </div>
+    ${!recOpts.length ? `<p class="note" style="margin-top:6px">Save a few ${M.nouns} to compare against them here.</p>` : ''}
+  </div>
+  <p class="note">Measured from one camera in 2D, so angles and distances are estimates. ${kind === 'hit' ? 'Bat position is estimated from the image. ' : ''}Use the numbers to compare your own reps filmed the same way.</p>`;
+  requestAnimationFrame(drawChart);
+}
+
+/* ---------------- library + game day ---------------- */
+function thumb(canvas, rec) {
+  const frames = st.recFrameCache.get(rec.id) || unpackFrames(rec); st.recFrameCache.set(rec.id, frames);
+  const f = frames[rec.key] || frames[0];
+  const { ctx, w, h } = canvasCtx(canvas); ctx.clearRect(0, 0, w, h);
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity; for (let j = 0; j < 17; j++) { x0 = Math.min(x0, f[j*2]); x1 = Math.max(x1, f[j*2]); y0 = Math.min(y0, f[j*2+1]); }
+  const s = Math.min(w/(x1 - x0 + 0.3), h/(0.0 - y0 + 0.25)); const ox = w/2 - (x0 + x1)/2*s, oy = h - 0.1*s;
+  drawSkel(ctx, f, (x, y) => [ox + x*s, oy + y*s], { colors: { l: css('--lead'), b: css('--back'), c: '#E9EEF4' }, scale: s, leadLeft: rec.leadLeft });
+}
+let delArm = null;
+function renderLibrary() {
+  const kind = st.mode, M = MODE[kind], all = recsFor(kind), base = st.prefs['base_' + kind];
+  const pnames = [...new Set(all.map(r => r.player).filter(Boolean))]; if (st.libPlayer && !pnames.includes(st.libPlayer)) st.libPlayer = null;
+  const list = st.libPlayer ? all.filter(r => r.player === st.libPlayer) : all;
+  $('libFilter').innerHTML = pnames.length > 1 ? `<button class="chip" data-libp="" aria-pressed="${!st.libPlayer}">Everyone</button>` + pnames.map(p => `<button class="chip" data-libp="${esc(p)}" aria-pressed="${st.libPlayer === p}">${esc(p)}</button>`).join('') : '';
+  $('libEyebrow').textContent = 'Saved skeletons · ' + (kind === 'hit' ? 'Hitting' : 'Pitching');
+  $('libTitle').textContent = 'Your ' + M.nouns;
+  const el = $('libList');
+  if (!list.length) { el.innerHTML = `<div class="empty"><p>No saved ${M.nouns} yet.</p><p class="small">Analyze a ${M.noun}, then tap Save. Your first saved ${M.noun} becomes your baseline.</p><div><button class="btn primary" data-tab="Analyze">Analyze a ${M.noun}</button></div></div>`; }
+  else el.innerHTML = list.map(r => `
+    <div class="lib-item">
+      <canvas data-thumb="${esc(r.id)}" aria-hidden="true"></canvas>
+      <div style="min-width:0"><div class="nm">${r.id === base ? '<span class="star" aria-label="Baseline">★ </span>' : ''}${esc(r.name)}</div><div class="meta">${r.player ? esc(r.player) + ' · ' : ''}${fmtDate(r.createdAt)} · ${esc(r.hand === 'L' ? 'Left' : 'Right')}</div></div>
+      <div class="lib-score">${r.overall}</div>
+      <div class="lib-actions">
+        <button class="chip" data-open="${esc(r.id)}">Review</button>
+        <button class="chip" data-cmpa="${esc(r.id)}">Side by side</button>
+        <button class="chip" data-cmp="${esc(r.id)}">Overlay on current</button>
+        ${r.id === base ? '' : `<button class="chip" data-base="${esc(r.id)}">Make baseline</button>`}
+        ${delArm === r.id ? `<button class="chip" data-delyes="${esc(r.id)}" style="color:var(--fix);border-color:var(--fix)">Delete for good</button><button class="chip" data-delno="1">Keep</button>` : `<button class="chip" data-del="${esc(r.id)}">Delete</button>`}
+      </div>
+    </div>`).join('');
+  el.querySelectorAll('canvas[data-thumb]').forEach(c => { const r = list.find(x => x.id === c.dataset.thumb); if (r) thumb(c, r); });
+  // trend
+  const tc = $('trendCard');
+  if (list.length < 2) { tc.innerHTML = `<div class="eyebrow">Trend</div><h2>Rep to rep</h2><p class="muted small">Save at least two ${M.nouns} to see how your numbers move over time.</p>`; return; }
+  const last = list.slice(0, 8).reverse();
+  const recurring = {}; list.slice(0, 6).forEach(r => (r.cues || []).forEach(c => { recurring[c.label] = (recurring[c.label] || 0) + 1; }));
+  const rec = Object.entries(recurring).sort((a, b) => b[1] - a[1]).slice(0, 4);
+  tc.innerHTML = `<div class="eyebrow">Trend · last ${last.length}</div><h2>Rep to rep</h2>
+    <div class="chart-wrap" style="height:140px"><canvas id="trendCv" aria-label="Score by rep"></canvas></div>
+    <h3 style="margin-top:14px">Keeps showing up</h3>
+    ${rec.length ? `<ul class="cue-list" style="margin-top:8px">${rec.map(([l, n]) => `<li><span class="n">${n}×</span><span>${esc(l)}</span></li>`).join('')}</ul>` : '<p class="muted small">No repeat issues in recent reps.</p>'}`;
+  requestAnimationFrame(() => {
+    const c = $('trendCv'); if (!c) return; const { ctx, w, h, dpr } = canvasCtx(c); ctx.clearRect(0, 0, w, h);
+    const pad = 22*dpr, X = i => pad + i/(last.length - 1)*(w - pad*2), Y = v => h - pad - (v - 40)/60*(h - pad*1.6);
+    ctx.strokeStyle = css('--line'); ctx.lineWidth = dpr; ctx.fillStyle = css('--ink-2'); ctx.font = `${10*dpr}px ${css('--f-mono') || 'monospace'}`;
+    for (const v of [50, 75, 100]) { ctx.beginPath(); ctx.moveTo(pad, Y(v)); ctx.lineTo(w - pad, Y(v)); ctx.stroke(); ctx.fillText(String(v), 0, Y(v) + 3*dpr); }
+    ctx.strokeStyle = css('--accent'); ctx.lineWidth = 2.5*dpr; ctx.beginPath(); last.forEach((r, i) => { const x = X(i), y = Y(Math.max(40, r.overall)); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke();
+    last.forEach((r, i) => { ctx.fillStyle = r.id === base ? css('--accent') : css('--surface'); ctx.strokeStyle = css('--accent'); ctx.lineWidth = 2*dpr; ctx.beginPath(); ctx.arc(X(i), Y(Math.max(40, r.overall)), 4.5*dpr, 0, Math.PI*2); ctx.fill(); ctx.stroke(); });
+  });
+}
+const gd = { rec: null, frames: null, pos: 0, last: 0 };
+function renderGameDay() {
+  const kind = st.mode, M = MODE[kind], list = recsFor(kind);
+  const base = baselineFor(kind) || list.slice().sort((a, b) => b.overall - a.overall)[0] || null;
+  gd.rec = base; gd.frames = base ? (st.recFrameCache.get(base.id) || unpackFrames(base)) : null; if (base) st.recFrameCache.set(base.id, gd.frames);
+  gd.demo = null;
+  if (!base) { const d = buildDemo(kind); gd.demo = d; gd.frames = d.frames; gd.res = analyzeMotion(d, kind); }
+  $('gdTitle').textContent = base ? (baselineFor(kind) ? 'Your baseline ' + M.noun : 'Your best ' + M.noun) : 'Sample ' + M.noun;
+  $('gdNote').textContent = base ? `${base.name} · score ${base.overall}. Watch it a few times to lock in the feel before you play.` : `Save a ${M.noun} and mark it as your baseline to review it here before games.`;
+  const side = $('gdSide');
+  const cues = base ? (base.cues || []) : [];
+  const recurring = {}; list.slice(0, 6).forEach(r => (r.cues || []).forEach(c => { recurring[c.key] = recurring[c.key] || { ...c, n: 0 }; recurring[c.key].n++; }));
+  const reps = Object.values(recurring).filter(c => c.n >= 2).sort((a, b) => b.n - a.n).slice(0, 3);
+  const m = base ? base.metrics : {};
+  const keyNums = kind === 'hit' ? [['stride', 'Stride', '% ht'], ['head', 'Head movement', '% ht'], ['tilt', 'Spine tilt', '°'], ['ttc', 'Launch to contact', 'ms']] : [['stride', 'Stride', '% ht'], ['elbow', 'Elbow at plant', '% ht'], ['trunk', 'Trunk tilt', '°'], ['block', 'Front leg brace', '°']];
+  side.innerHTML = `
+    <div class="card"><div class="eyebrow">Today's focus</div><h2>Your cues</h2>
+      ${cues.length || reps.length ? `<ul class="cue-list">${[...reps.map(c => ({ ...c, rep: true })), ...cues.filter(c => !reps.find(r => r.key === c.key))].slice(0, 3).map((c, i) => `<li><span class="n">${i+1}</span><div><b>${esc(c.label)}</b>${c.rep ? ` <span class="pill watch">${c.n} of last reps</span>` : ''}<p class="muted small" style="margin-top:2px">${esc(c.cue || '')}</p></div></li>`).join('')}</ul>` : `<p class="muted small">${base ? 'No open fixes on this rep. Trust it.' : 'Your cues show up here once you have saved reps.'}</p>`}
+    </div>
+    ${base ? `<div class="card"><div class="eyebrow">Baseline numbers</div><h2>Your baseline numbers</h2>
+      <div class="kv">${keyNums.map(([k, l, u]) => `<div><b>${fmtShort(m[k], u)}</b><span>${esc(l)}${u === '% ht' ? ', % of height' : ''}</span></div>`).join('')}</div>
+      <p class="note" style="margin-top:10px">Kinematic order: ${esc((base.order || []).join(' → '))}</p>
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="gdCheck">Film a rep and compare</button><button class="btn" data-open="${esc(base.id)}">Open in Analyze</button></div></div>` : ''}`;
+  const b = $('gdCheck'); if (b) b.onclick = () => { st.pendingCompare = base.id; setTab('Analyze'); toast('Record or choose a ' + M.noun + '. It will be checked against ' + base.name + '.'); };
+}
+function drawGameDay(ts) {
+  if (st.tab !== 'Game' || !gd.frames) return;
+  const c = $('gdCv'); const { ctx, w, h, dpr } = canvasCtx(c); ctx.clearRect(0, 0, w, h);
+  const F = gd.frames, fps = gd.rec ? gd.rec.fps : 30;
+  const a = gd.rec ? 0 : gd.res.phases.start, b = gd.rec ? F.length - 1 : gd.res.phases.end;
+  const dt = gd.last ? (ts - gd.last)/1000 : 0; gd.last = ts; gd.pos += dt*fps*0.5; if (gd.pos > b - a + fps*0.5) gd.pos = 0;
+  const i = a + Math.min(b - a, Math.floor(gd.pos)), f = F[i];
+  const tips0 = gd.rec && gd.rec.bat ? gd.rec.bat : (gd.demo && gd.demo.batTips ? gd.demo.batTips.map(t => t ? [t.x*1000, t.y*1000] : 0) : null);
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity; for (let k = a; k <= b; k++) { for (let j = 0; j < 17; j++) { x0 = Math.min(x0, F[k][j*2]); x1 = Math.max(x1, F[k][j*2]); y0 = Math.min(y0, F[k][j*2+1]); } const t = st.mode === 'hit' && tips0 && tips0[k]; if (t) { x0 = Math.min(x0, t[0]/1000); x1 = Math.max(x1, t[0]/1000); y0 = Math.min(y0, t[1]/1000); } }
+  const s = Math.min(w/(x1 - x0 + 0.3), h/(-y0 + 0.3)); const ox = w/2 - (x0 + x1)/2*s, oy = h - 0.12*s;
+  ctx.strokeStyle = 'rgba(233,238,244,.35)'; ctx.lineWidth = 2*dpr; ctx.beginPath(); ctx.moveTo(0, oy); ctx.lineTo(w, oy); ctx.stroke();
+  const tips = gd.rec && gd.rec.bat ? gd.rec.bat : (gd.demo && gd.demo.batTips ? gd.demo.batTips.map(t => t ? [t.x*1000, t.y*1000] : 0) : null);
+  if (tips && st.mode === 'hit') { const tp = tips[i]; if (tp) { const hx = (f[18]+f[20])/2, hy = (f[19]+f[21])/2; ctx.strokeStyle = '#D9A55B'; ctx.lineWidth = Math.max(3, s*0.022); ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(ox + hx*s, oy + hy*s); ctx.lineTo(ox + tp[0]/1000*s, oy + tp[1]/1000*s); ctx.stroke(); } }
+  drawSkel(ctx, f, (x, y) => [ox + x*s, oy + y*s], { colors: { l: css('--lead'), b: css('--back'), c: '#E9EEF4' }, scale: s, leadLeft: gd.rec ? gd.rec.leadLeft : true });
+  const phases = gd.rec ? gd.rec.phases : gd.res.phases.list.map(([n, k]) => [n, k - a]);
+  let nm = phases[0][0]; for (const [n, k] of phases) if (i - a >= k) nm = n;
+  ctx.fillStyle = '#E8B44A'; ctx.font = `600 ${13*dpr}px ${css('--f-mono') || 'monospace'}`; ctx.fillText(nm.toUpperCase(), 12*dpr, 22*dpr);
+}
+
+/* ---------------- tabs, mode, events ---------------- */
+function setTab(t) {
+  st.tab = t; ['Analyze', 'Compare', 'Library', 'Game'].forEach(n => { $('v' + n).hidden = n !== t; $('t' + n).setAttribute('aria-selected', n === t ? 'true' : 'false'); });
+  if (t !== 'Analyze') pause();
+  if (t === 'Library') renderLibrary(); if (t === 'Game') { gd.pos = 0; gd.last = 0; renderGameDay(); }
+  if (t === 'Analyze') requestAnimationFrame(draw);
+  if (t !== 'Compare' && cmp.playing) cmpPlay(false);
+  if (t === 'Compare') renderCompare();
+}
+function setMode(m) {
+  if (st.busy) { toast('Wait for the current analysis to finish.'); return; }
+  st.mode = m; saveUi(); st.recId = null;
+  $('mHit').setAttribute('aria-pressed', m === 'hit'); $('mPitch').setAttribute('aria-pressed', m === 'pitch');
+  const M = MODE[m]; $('capTitle').textContent = M.title; $('recLbl').textContent = M.rec; $('handLbl').textContent = M.hand;
+  $('tipsList').innerHTML = M.tips.map(t => `<li>${esc(t)}</li>`).join('');
+  syncHand(); loadDemo(); renderAll();
+}
+function syncHand() { const h = st.hand[st.mode]; $('hR').setAttribute('aria-pressed', h === 'R'); $('hL').setAttribute('aria-pressed', h === 'L'); }
+function renderAll() { syncPlayers(); if (st.tab === 'Compare' && !document.activeElement?.closest?.('#vCompare select')) renderCompare(); if (st.tab === 'Library') renderLibrary(); if (st.tab === 'Game') renderGameDay(); if (st.res && st.tab === 'Analyze' && !document.activeElement?.closest?.('#report')) renderReport(); }
+let toastT; function toast(m) { const t = $('toast'); t.textContent = m; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 4200); }
+
+$('mHit').onclick = () => setMode('hit'); $('mPitch').onclick = () => setMode('pitch');
+$('tAnalyze').onclick = () => setTab('Analyze'); $('tLibrary').onclick = () => setTab('Library'); $('tGame').onclick = () => setTab('Game'); $('tCompare').onclick = () => setTab('Compare');
+$('hR').onclick = () => { st.hand[st.mode] = 'R'; saveUi(); syncHand(); persistPlayer(); };
+$('hL').onclick = () => { st.hand[st.mode] = 'L'; saveUi(); syncHand(); persistPlayer(); };
+$('slowSel').onchange = e => { st.slow = +e.target.value; };
+{ const hs = $('htSel'); for (let i = 48; i <= 82; i++) hs.insertAdjacentHTML('beforeend', `<option value="${i}" ${i === st.heightIn ? 'selected' : ''}>${Math.floor(i/12)}′${i%12}″</option>`); hs.onchange = e => { st.heightIn = +e.target.value; saveUi(); persistPlayer(); if (st.res) renderReport(); }; }
+const onFile = e => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (!f) return; if (st.pendingCompare) { st.compareRec = st.records.find(r => r.id === st.pendingCompare) || null; st.pendingCompare = null; } analyzeFile(f).then(() => { if (st.compareRec) { prepCompare(); setStageMeta(); renderReport(); draw(); } }); };
+$('upIn').onchange = onFile;
+// The tap lands directly on the file input (no scripted click), which phones allow even inside embedded pages.
+// If the page never loses focus after the tap, the picker was blocked: say how to get around it.
+{ let pickT = 0; const left = () => { clearTimeout(pickT); };
+  $('upIn').addEventListener('click', e => {
+    if (st.busy) { e.preventDefault(); toast('Wait for the current analysis to finish.'); return; }
+    clearTimeout(pickT); pickT = setTimeout(() => { if (document.visibilityState === 'visible' && document.hasFocus()) $('pickHelp').hidden = false; }, 1800);
+  });
+  window.addEventListener('blur', left); document.addEventListener('visibilitychange', left); $('upIn').addEventListener('change', () => { left(); $('pickHelp').hidden = true; });
+  $('pickHelpClose').onclick = () => { $('pickHelp').hidden = true; };
+}
+$('procCancel').onclick = () => { st.cancel = true; };
+$('bPlay').onclick = () => st.playing ? pause() : play();
+$('bPrev').onclick = () => { pause(); seekFrame(st.frame - 1); };
+$('bNext').onclick = () => { pause(); seekFrame(st.frame + 1); };
+$('scrub').oninput = e => { pause(); seekFrame(+e.target.value); };
+document.querySelectorAll('[data-speed]').forEach(b => b.onclick = () => { st.speed = +b.dataset.speed; document.querySelectorAll('[data-speed]').forEach(x => x.setAttribute('aria-pressed', x === b)); if (st.hasVideo) vid.playbackRate = st.speed; });
+$('layerChips').onclick = e => { const b = e.target.closest('[data-layer]'); if (!b) return; const k = b.dataset.layer; st.layers[k] = !st.layers[k]; b.setAttribute('aria-pressed', st.layers[k]); if (k === 'video') sizeStage(); setStageMeta(); draw(); };
+$('phaseChips').onclick = e => { const b = e.target.closest('[data-name]'); if (!b) return; pause(); seekFrame(st.res.phases.list.find(p => p[0] === b.dataset.name)[1]); };
+vid.addEventListener('seeked', () => { if (!st.busy && !st.playing) draw(); });
+document.addEventListener('keydown', e => { if (st.tab !== 'Analyze' || /INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName)) return; if (e.key === ' ') { e.preventDefault(); st.playing ? pause() : play(); } if (e.key === 'ArrowLeft') { pause(); seekFrame(st.frame - 1); } if (e.key === 'ArrowRight') { pause(); seekFrame(st.frame + 1); } });
+
+$('report').addEventListener('click', async e => {
+  const g = e.target.closest('[data-goto]'); if (g) { pause(); seekFrame(st.res.phases.list.find(p => p[0] === g.dataset.goto)?.[1] ?? st.res.phases.key); $('stage').scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
+  const fo = e.target.closest('[data-focus]'); if (fo) {
+    const k = fo.dataset.focus; st.focusFix = st.focusFix === k ? null : k;
+    if (st.focusFix) { const m = st.res.metrics.find(x => x.key === k); st.idealFrames = st.seq.frames.map((f, i) => { const o = Float32Array.from(f); m.fix(o, i); return o; }); pause(); seekFrame(st.res.phases.list.find(p => p[0] === m.phase)?.[1] ?? st.res.phases.key); }
+    else st.idealFrames = st.res.ideal;
+    st.layers.ideal = true; document.querySelector('[data-layer="ideal"]').setAttribute('aria-pressed', 'true');
+    renderReport(); draw(); $('stage').scrollIntoView({ behavior: 'smooth', block: 'center' }); return;
+  }
+  if (e.target.id === 'saveBtn') {
+    const name = ($('saveName').value || '').trim() || st.name; const asBase = $('saveBase').checked;
+    const id = 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const rec = packRecord(st.seq, st.res, { id, name, createdAt: Date.now(), hand: st.hand[st.mode], source: st.source, player: currentPlayer().name, playerId: currentPlayer().id, heightIn: st.heightIn });
+    if (currentPlayer().unsaved) persistPlayer();
+    e.target.disabled = true;
+    try { await store.save(rec); if (asBase) await store.setPrefs({ ['base_' + st.mode]: id }); st.saved = true; st.recId = id; st.name = name; setStageMeta(); toast('Saved to your library' + (asBase ? ' as your baseline.' : '.')); renderReport(); }
+    catch (err) { e.target.disabled = false; toast(err && err.code === 'quota_exceeded' ? 'Your library is full. Delete a few old reps and try again.' : (err && err.message) || 'Could not save. Try again.'); }
+  }
+});
+$('report').addEventListener('change', e => {
+  if (e.target.id === 'cmpSel') { st.compareRec = st.records.find(r => r.id === e.target.value) || null; prepCompare(); st.layers.past = true; document.querySelector('[data-layer="past"]').setAttribute('aria-pressed', 'true'); setStageMeta(); renderReport(); draw(); }
+});
+document.addEventListener('click', async e => {
+  const t = e.target.closest('[data-tab]'); if (t) { setTab(t.dataset.tab); return; }
+  const ca = e.target.closest('[data-cmpa]'); if (ca) { const r = st.records.find(x => x.id === ca.dataset.cmpa); if (r) { if (r.kind !== st.mode) setMode(r.kind); cmp.aId = r.id; const other = recsFor(r.kind).find(x => x.id !== r.id && (x.player || '') !== (r.player || '')) || recsFor(r.kind).find(x => x.id !== r.id); cmp.bId = other ? other.id : SAMPLE_A; if (!other) toast('Save a rep for another player to compare against. Showing a sample for now.'); setTab('Compare'); renderCompare(true); window.scrollTo({ top: 0 }); } return; }
+  const lp = e.target.closest('[data-libp]'); if (lp) { st.libPlayer = lp.dataset.libp || null; renderLibrary(); return; }
+  const o = e.target.closest('[data-open]'); if (o) { const r = st.records.find(x => x.id === o.dataset.open); if (r) { if (r.kind !== st.mode) setMode(r.kind); loadRecord(r); setTab('Analyze'); } return; }
+  const c = e.target.closest('[data-cmp]'); if (c) { const r = st.records.find(x => x.id === c.dataset.cmp); if (r) { if (st.recId === r.id) { toast('That rep is the one open in Analyze. Open a different rep or film a new one.'); return; } st.compareRec = r; prepCompare(); st.layers.past = true; document.querySelector('[data-layer="past"]').setAttribute('aria-pressed', 'true'); setTab('Analyze'); setStageMeta(); renderReport(); draw(); } return; }
+  const b = e.target.closest('[data-base]'); if (b) { try { await store.setPrefs({ ['base_' + st.mode]: b.dataset.base }); toast('Baseline updated.'); } catch { toast('Could not update the baseline. Try again.'); } return; }
+  const d = e.target.closest('[data-del]'); if (d) { delArm = d.dataset.del; renderLibrary(); return; }
+  const dn = e.target.closest('[data-delno]'); if (dn) { delArm = null; renderLibrary(); return; }
+  const dy = e.target.closest('[data-delyes]'); if (dy) { const id = dy.dataset.delyes; delArm = null; try { await store.remove(id); if (st.prefs['base_' + st.mode] === id) await store.setPrefs({ ['base_' + st.mode]: null }); if (st.compareRec && st.compareRec.id === id) { st.compareRec = null; } toast('Deleted.'); } catch { toast('Could not delete. Try again.'); } return; }
+});
+new ResizeObserver(() => { if (st.res) { computeViewBox(); draw(); } }).observe($('stage'));
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => draw());
+
+/* ---------------- players ---------------- */
+const players = () => (Array.isArray(st.prefs.players) ? st.prefs.players : []);
+function currentPlayer() { const list = players(); return list.find(p => p.id === st.playerId) || list.find(p => p.id === st.prefs.player) || list[0] || { id: 'me', name: 'Me', heightIn: st.heightIn, hand: { ...st.hand }, unsaved: true }; }
+async function savePlayer(p) { const list = players().filter(x => x.id !== p.id); list.push({ id: p.id, name: p.name, heightIn: p.heightIn, hand: { hit: p.hand.hit, pitch: p.hand.pitch } }); await store.setPrefs({ players: list, player: p.id }); }
+function persistPlayer() { const p = currentPlayer(); savePlayer({ ...p, heightIn: st.heightIn, hand: { ...st.hand } }).catch(() => toast('Could not save the player. Try again.')); }
+let appliedPlayer = '';
+function applyPlayer(p) { st.playerId = p.id; st.heightIn = p.heightIn || 70; st.hand = { hit: (p.hand && p.hand.hit) || 'R', pitch: (p.hand && p.hand.pitch) || 'R' }; syncHand(); const hs = $('htSel'); if (hs) hs.value = String(st.heightIn); appliedPlayer = JSON.stringify(p); }
+function syncPlayers() {
+  const p = currentPlayer(); if (!p.unsaved && JSON.stringify(p) !== appliedPlayer) applyPlayer(p);
+  const sel = $('plSel'); if (!sel || document.activeElement === sel) return;
+  const list = players().length ? players() : [p];
+  sel.innerHTML = list.map(x => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('') + '<option value="__add">+ Add player…</option>';
+  sel.value = p.id;
+}
+$('plSel').onchange = e => {
+  const v = e.target.value;
+  if (v === '__add') { e.target.value = currentPlayer().id; $('addPl').hidden = false; $('plName').value = ''; $('plName').focus(); return; }
+  const p = players().find(x => x.id === v); if (!p) return;
+  applyPlayer(p); store.setPrefs({ player: p.id }).catch(() => {});
+  if (st.source === 'video' && !st.saved) { st.name = p.name + ' · ' + MODE[st.mode].noun + ' · ' + fmtDate(Date.now()); renderReport(); }
+};
+$('plCancel').onclick = () => { $('addPl').hidden = true; };
+$('addPl').onsubmit = async e => {
+  e.preventDefault(); const name = $('plName').value.trim(); if (!name) { toast('Type a name for the player.'); return; }
+  const cur = currentPlayer(); if (cur.unsaved) { try { await savePlayer({ ...cur, heightIn: st.heightIn, hand: { ...st.hand } }); } catch {} }
+  const p = { id: 'p' + Date.now().toString(36), name, heightIn: st.heightIn, hand: { ...st.hand } };
+  try { await savePlayer(p); applyPlayer(p); syncPlayers(); $('addPl').hidden = true; toast(`Added ${name}. Set ${name}'s height and ${MODE[st.mode].hand.toLowerCase()} side before filming.`); } catch { toast('Could not add the player. Try again.'); }
+};
+
+/* ---------------- compare two reps (two players or two reps) ---------------- */
+const cmp = { aId: null, bId: null, A: null, B: null, t: 0, playing: false, speed: 0.5, view: 'overlay', size: 'same', sync: 'phase', paths: true, diffs: true, last: 0, phase: null, vb: null };
+const SAMPLE_A = 'sample:a', SAMPLE_B = 'sample:b', CURRENT = 'current';
+const entryCache = new Map();
+const mphH = (v, h) => Number.isFinite(v) && v > 0 ? Math.round(v*h*0.0254*2.23694) + ' mph' : '—';
+
+function demoVariant(kind) {
+  const base = buildDemo(kind), r = analyzeMotion(base, kind), F = r.ideal, n = F.length, key = r.phases.key;
+  const stretch = 1.3, pre = key*stretch, total = Math.round(pre + (n - key));
+  const src = t => Math.min(n - 1, t < pre ? t/stretch : key + (t - pre));
+  const frames = []; for (let t = 0; t < total; t++) frames.push(lerpFrame(F, src(t)));
+  const seq = { frames, conf: frames.map(() => new Float32Array(17).fill(1)), fps: base.fps, leadLeft: true, H: 1, groundY: 0, originX: 0, fwd: 1, demo: true };
+  if (base.batTips) {
+    seq.batTips = frames.map((f1, t) => { const i = Math.round(src(t)), b = base.batTips[i], f0 = base.frames[i]; return { x: b.x - (f0[18] + f0[20])/2 + (f1[18] + f1[20])/2, y: b.y - (f0[19] + f0[21])/2 + (f1[19] + f1[21])/2, c: 1 }; });
+    addBatSpeed(seq);
+  }
+  return seq;
+}
+function finishEntry(e) {
+  const S = sideMap(e.seq.leadLeft), r = e.res;
+  e.span = [r.phases.start, r.phases.end]; e.key = r.phases.key; e.fps = e.seq.fps;
+  e.anchor = e.seq.frames[r.phases.start][S.bAn*2];
+  e.path = e.seq.frames.map((f, i) => {
+    if (e.kind === 'hit') { const b = e.seq.batTips && e.seq.batTips[i]; return b && b.c > 0.2 ? [b.x, b.y] : null; }
+    return [f[S.bWr*2], f[S.bWr*2+1]];
+  });
+  e.hands = e.seq.frames.map(f => e.kind === 'hit' ? [(f[18] + f[20])/2, (f[19] + f[21])/2] : null);
+  return e;
+}
+function buildEntry(id) {
+  const kind = st.mode;
+  if (id === CURRENT) {
+    if (!(st.res && st.res.kind === kind && st.seq)) return null;
+    const p = currentPlayer();
+    return finishEntry({ id, kind, label: st.name, player: p.name, heightIn: st.viewHeight || st.heightIn, seq: st.seq, res: st.res });
+  }
+  const ck = kind + '|' + id; if (entryCache.has(ck)) return entryCache.get(ck);
+  let e = null;
+  if (id === SAMPLE_A || id === SAMPLE_B) {
+    const seq = id === SAMPLE_A ? buildDemo(kind) : demoVariant(kind);
+    e = { id, kind, label: (id === SAMPLE_A ? 'Sample adult ' : 'Sample youth ') + MODE[kind].noun, player: id === SAMPLE_A ? 'Sample adult' : 'Sample youth', heightIn: id === SAMPLE_A ? 72 : 58, seq, res: analyzeMotion(seq, kind) };
+  } else {
+    const rec = st.records.find(r => r.id === id && r.kind === kind); if (!rec) return null;
+    const seq = seqFromRecord(rec);
+    e = { id, kind, label: rec.name, player: rec.player || '', heightIn: rec.heightIn || 70, seq, res: analyzeMotion(seq, kind), rec };
+  }
+  finishEntry(e); entryCache.set(ck, e); return e;
+}
+function validCmpId(id) {
+  if (!id) return false;
+  if (id === SAMPLE_A || id === SAMPLE_B) return true;
+  if (id === CURRENT) return !!(st.res && st.res.kind === st.mode && st.source === 'video' && !st.saved);
+  return st.records.some(r => r.id === id && r.kind === st.mode);
+}
+function defaultPair() {
+  const recs = recsFor(st.mode);
+  if (recs.length >= 2) { const b = recs[0]; const a = recs.find(r => (r.player || '') !== (b.player || '')) || recs[1]; return [a.id, b.id]; }
+  if (recs.length === 1 && validCmpId(CURRENT)) return [recs[0].id, CURRENT];
+  return [SAMPLE_A, SAMPLE_B];
+}
+function cmpNames() {
+  const A = cmp.A, B = cmp.B;
+  if (A.player && B.player && A.player !== B.player) return [A.player, B.player];
+  return ['Rep A', 'Rep B'];
+}
+const nmOf = e => { const [a, b] = cmpNames(); return e === cmp.A ? a : b; };
+const phIdx = (e, name) => (e.res.phases.list.find(p => p[0] === name) || [0, e.key])[1];
+const phaseAt = (e, i) => { let nm = e.res.phases.list[0][0]; for (const [n, k] of e.res.phases.list) if (i >= k) nm = n; return nm; };
+
+/* time mapping: master t = seconds relative to A's key event */
+const idxA = t => clamp(cmp.A.key + t*cmp.A.fps, cmp.A.span[0], cmp.A.span[1]);
+function idxB(t) {
+  const A = cmp.A, B = cmp.B;
+  const i = cmp.sync === 'phase' ? alignIndex(A.res.phases.list, B.res.phases.list, idxA(t), B.seq.frames.length) : B.key + t*B.fps;
+  return clamp(i, B.span[0], B.span[1]);
+}
+function tRange() {
+  const A = cmp.A, B = cmp.B;
+  const ra = [(A.span[0] - A.key)/A.fps, (A.span[1] - A.key)/A.fps];
+  if (cmp.sync === 'phase') return ra;
+  return [Math.min(ra[0], (B.span[0] - B.key)/B.fps), Math.max(ra[1], (B.span[1] - B.key)/B.fps)];
+}
+const scaleOf = e => cmp.size === 'same' ? 1 : e.heightIn / Math.max(cmp.A.heightIn, cmp.B.heightIn);
+const frameOf = (e, i) => lerpFrame(e.seq.frames, clamp(i, e.span[0], e.span[1]));
+function placeF(e, f) { const s = scaleOf(e), o = new Float32Array(34); for (let j = 0; j < 17; j++) { o[j*2] = (f[j*2] - e.anchor)*s; o[j*2+1] = f[j*2+1]*s; } return o; }
+const placeP = (e, p) => p ? [(p[0] - e.anchor)*scaleOf(e), p[1]*scaleOf(e)] : null;
+function computeCmpVB() {
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = 0.02;
+  for (const e of [cmp.A, cmp.B]) for (let i = e.span[0]; i <= e.span[1]; i++) {
+    const f = placeF(e, e.seq.frames[i]); for (let j = 0; j < 17; j++) { x0 = Math.min(x0, f[j*2]); x1 = Math.max(x1, f[j*2]); y0 = Math.min(y0, f[j*2+1]); y1 = Math.max(y1, f[j*2+1]); }
+    const p = placeP(e, e.path[i]); if (p) { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); }
+  }
+  const pad = 0.1; cmp.vb = { x0: x0 - pad, x1: x1 + pad, y0: y0 - pad, y1: y1 + pad*0.6 };
+  cmp.ex = [cmp.A, cmp.B].map(e => { let a = Infinity, b = -Infinity; for (let i = e.span[0]; i <= e.span[1]; i++) { const f = placeF(e, e.seq.frames[i]); for (let j = 0; j < 17; j++) { a = Math.min(a, f[j*2]); b = Math.max(b, f[j*2]); } const p = placeP(e, e.path[i]); if (p) { a = Math.min(a, p[0]); b = Math.max(b, p[0]); } } return [a - pad, b + pad]; });
+}
+// B's joint that plays the same role (front/back) as A's joint j — a lefty's front knee is the right knee
+const roleJ = j => (!cmp.A || !cmp.B || cmp.A.seq.leadLeft === cmp.B.seq.leadLeft || j === 0) ? j : (j % 2 ? j + 1 : j - 1);
+function jointDiffs(fa, fb) {
+  const ha = [(fa[22] + fa[24])/2, (fa[23] + fa[25])/2], hb = [(fb[22] + fb[24])/2, (fb[23] + fb[25])/2];
+  const d = new Float32Array(17); for (let j = 0; j < 17; j++) { const k = roleJ(j); d[j] = Math.hypot((fa[j*2] - ha[0]) - (fb[k*2] - hb[0]), (fa[j*2+1] - ha[1]) - (fb[k*2+1] - hb[1])); }
+  return d;
+}
+const DIFF_J = [0, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], DIFF_T = 0.05;
+
+function drawPath(ctx, e, idx, map, s, col) {
+  const a = e.span[0], b = e.span[1], cur = Math.round(idx);
+  const line = (pts, from, to, alpha, lw) => { ctx.globalAlpha = alpha; ctx.lineWidth = lw; ctx.beginPath(); let on = false; for (let i = from; i <= to; i++) { const p = placeP(e, pts[i]); if (!p) { on = false; continue; } const q = map(p[0], p[1]); on ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); on = true; } ctx.stroke(); };
+  ctx.save(); ctx.strokeStyle = col; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  line(e.path, a, b, 0.22, Math.max(1.5, s*0.006));
+  line(e.path, a, cur, 0.85, Math.max(2, s*0.009));
+  if (e.kind === 'hit') { ctx.setLineDash([s*0.012, s*0.012]); line(e.hands, a, cur, 0.6, Math.max(1.5, s*0.005)); }
+  ctx.restore();
+}
+function drawCompare() {
+  const c = $('cCv'); if (!c || !cmp.A || !cmp.B || !cmp.vb) return;
+  const { ctx, w, h, dpr } = canvasCtx(c); ctx.clearRect(0, 0, w, h);
+  const A = cmp.A, B = cmp.B, vb = cmp.vb, ia = idxA(cmp.t), ib = idxB(cmp.t);
+  const ra = frameOf(A, ia), rb = frameOf(B, ib), fa = placeF(A, ra), fb = placeF(B, rb);
+  const diff = jointDiffs(ra, rb);
+  const ca = css('--pa'), cb = css('--pb'), cf = css('--fix');
+  const panes = cmp.view === 'overlay' ? [{ x: 0, w, ents: [[B, ib, fb, cb], [A, ia, fa, ca]] }] : [{ x: 0, w: w/2, ents: [[A, ia, fa, ca]] }, { x: w/2, w: w/2, ents: [[B, ib, fb, cb]] }];
+  const [nA, nB] = cmpNames();
+  const wMax = panes.length > 1 ? Math.max(cmp.ex[0][1] - cmp.ex[0][0], cmp.ex[1][1] - cmp.ex[1][0]) : vb.x1 - vb.x0;
+  for (const pane of panes) {
+    const s = Math.min(pane.w/wMax, h/(vb.y1 - vb.y0));
+    const xr = panes.length > 1 ? cmp.ex[pane.ents[0][0] === A ? 0 : 1] : [vb.x0, vb.x1];
+    const ox = pane.x + (pane.w - (xr[1] - xr[0])*s)/2 - xr[0]*s, oy = (h - (vb.y1 - vb.y0)*s)/2 - vb.y0*s;
+    const map = (x, y) => [ox + x*s, oy + y*s];
+    ctx.save(); ctx.beginPath(); ctx.rect(pane.x, 0, pane.w, h); ctx.clip();
+    ctx.strokeStyle = 'rgba(233,238,244,.07)'; ctx.lineWidth = dpr; const step = s*0.25;
+    for (let x = ((ox % step) + step) % step + pane.x; x < pane.x + pane.w; x += step) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+    for (let y = oy; y > 0; y -= step) { ctx.beginPath(); ctx.moveTo(pane.x, y); ctx.lineTo(pane.x + pane.w, y); ctx.stroke(); }
+    ctx.strokeStyle = 'rgba(233,238,244,.35)'; ctx.lineWidth = 2*dpr; ctx.beginPath(); ctx.moveTo(pane.x, oy); ctx.lineTo(pane.x + pane.w, oy); ctx.stroke();
+    if (cmp.paths) for (const [e, idx, , col] of pane.ents) drawPath(ctx, e, idx, map, s, col);
+    for (const [e, idx, f, col] of pane.ents) {
+      if (e.kind === 'hit') { const p = placeP(e, e.path[Math.round(idx)]), hd = placeP(e, e.hands[Math.round(idx)]); if (p && hd) { const P1 = map(hd[0], hd[1]), Q = map(p[0], p[1]); ctx.save(); ctx.strokeStyle = col; ctx.lineCap = 'round'; ctx.lineWidth = Math.max(3, s*0.02*scaleOf(e)); ctx.beginPath(); ctx.moveTo(P1[0], P1[1]); ctx.lineTo(Q[0], Q[1]); ctx.stroke(); ctx.restore(); } }
+      drawSkel(ctx, f, map, { color: col, scale: s*scaleOf(e), leadLeft: e.seq.leadLeft });
+    }
+    if (cmp.diffs) {
+      ctx.save(); ctx.strokeStyle = cf; ctx.lineWidth = Math.max(1.5, s*0.005);
+      for (const j of DIFF_J) { if (diff[j] < DIFF_T) continue; const r = Math.max(6*dpr, s*(0.02 + Math.min(0.05, diff[j]*0.3)));
+        for (const [e, , f] of pane.ents) { if (pane.ents.length > 1 && e === A) continue; const k = e === B ? roleJ(j) : j; const q = map(f[k*2], f[k*2+1]); ctx.beginPath(); ctx.arc(q[0], q[1], r, 0, Math.PI*2); ctx.stroke(); }
+        if (pane.ents.length > 1) { const k = roleJ(j), p = map(fa[j*2], fa[j*2+1]), q = map(fb[k*2], fb[k*2+1]); ctx.setLineDash([3*dpr, 3*dpr]); ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.stroke(); ctx.setLineDash([]); }
+      }
+      ctx.restore();
+    }
+    if (panes.length > 1) { const e = pane.ents[0][0]; ctx.fillStyle = pane.ents[0][3]; ctx.font = `600 ${12*dpr}px ${css('--f-mono') || 'monospace'}`; ctx.fillText((e === A ? nA : nB).toUpperCase(), pane.x + 10*dpr, h - 12*dpr); }
+    ctx.restore();
+  }
+  if (panes.length > 1) { ctx.strokeStyle = 'rgba(233,238,244,.2)'; ctx.lineWidth = dpr; ctx.beginPath(); ctx.moveTo(w/2, 0); ctx.lineTo(w/2, h); ctx.stroke(); }
+  const pa = phaseAt(A, ia), pb = phaseAt(B, ib);
+  $('cPhase').textContent = pa === pb ? pa : `${nA}: ${pa} · ${nB}: ${pb}`;
+  $('cTime').textContent = (cmp.t >= 0 ? '+' : '') + Math.round(cmp.t*1000) + ' ms';
+  const [r0, r1] = tRange(), sc = $('cScrub'), v = Math.round((cmp.t - r0)/(r1 - r0)*1000); if (+sc.value !== v) sc.value = v;
+  document.querySelectorAll('#cPhaseChips .chip').forEach(ch => ch.setAttribute('aria-current', ch.dataset.cph === pa ? 'true' : 'false'));
+  drawSeqCharts();
+}
+function compareLoop(ts) {
+  if (st.tab !== 'Compare' || !cmp.A) { cmp.last = ts; return; }
+  if (cmp.playing) {
+    const dt = cmp.last ? Math.min(0.1, (ts - cmp.last)/1000) : 0; cmp.t += dt*cmp.speed;
+    const [r0, r1] = tRange(); if (cmp.t > r1 + 0.3) cmp.t = r0;
+    drawCompare();
+  }
+  cmp.last = ts;
+}
+function cmpPlay(on) { cmp.playing = on; $('cPlay').setAttribute('aria-label', on ? 'Pause' : 'Play'); $('cIco').innerHTML = on ? '<path d="M6 4h4v16H6zM14 4h4v16h-4z"/>' : '<path d="M7 4v16l13-8z"/>'; if (on) { const [r0, r1] = tRange(); if (cmp.t >= r1) cmp.t = r0; } }
+
+/* ---------------- comparison numbers ---------------- */
+function anglesAt(e, i) {
+  const f = e.seq.frames[clamp(Math.round(i), 0, e.seq.frames.length - 1)], S = sideMap(e.seq.leadLeft);
+  const hm = mid(f, 11, 12), sm = mid(f, 5, 6);
+  const kin = e.res.kin; const ii = clamp(Math.round(i), 0, kin.pelvisAngle.length - 1);
+  return {
+    leadKnee: angAt(P(f, S.lHip), P(f, S.lKn), P(f, S.lAn)), backKnee: angAt(P(f, S.bHip), P(f, S.bKn), P(f, S.bAn)),
+    leadHip: angAt(P(f, S.lSh), P(f, S.lHip), P(f, S.lKn)), backHip: angAt(P(f, S.bSh), P(f, S.bHip), P(f, S.bKn)),
+    leadElbow: angAt(P(f, S.lSh), P(f, S.lEl), P(f, S.lWr)), backElbow: angAt(P(f, S.bSh), P(f, S.bEl), P(f, S.bWr)),
+    lean: Math.atan2(sm[0] - hm[0], -(sm[1] - hm[1]))*DEG,
+    shTilt: Math.atan2(-(f[S.lSh*2+1] - f[S.bSh*2+1]), Math.abs(f[S.lSh*2] - f[S.bSh*2]) + 1e-6)*DEG,
+    sep: kin.pelvisAngle[ii] - kin.torsoAngle[ii],
+    headX: (f[0] - hm[0])*100,
+    stance: (f[S.lAn*2] - f[S.bAn*2])*100,
+  };
+}
+function angleDefs(kind) {
+  const hit = kind === 'hit';
+  return [
+    { k: 'leadKnee', name: hit ? 'Front knee' : 'Stride knee', unit: '°', tol: 10, hi: 'straighter', lo: 'more bent' },
+    { k: 'backKnee', name: hit ? 'Back knee' : 'Drive knee', unit: '°', tol: 12, hi: 'straighter', lo: 'more bent' },
+    { k: 'leadHip', name: 'Front hip (trunk to thigh)', unit: '°', tol: 12, hi: 'more open', lo: 'more closed' },
+    { k: 'backHip', name: 'Back hip (trunk to thigh)', unit: '°', tol: 12, hi: 'more open', lo: 'more closed' },
+    { k: 'leadElbow', name: hit ? 'Front elbow' : 'Glove elbow', unit: '°', tol: 15, hi: 'straighter', lo: 'more bent' },
+    { k: 'backElbow', name: hit ? 'Back elbow' : 'Throwing elbow', unit: '°', tol: 15, hi: 'straighter', lo: 'more bent' },
+    { k: 'lean', name: hit ? 'Trunk lean (+ toward pitcher)' : 'Trunk lean (+ toward plate)', sl: 'trunk', unit: '°', tol: 7, hi: hit ? 'leaning more toward the pitcher' : 'leaning more toward the plate', lo: hit ? 'leaning more back' : 'more upright' },
+    { k: 'shTilt', name: 'Shoulder line (+ front shoulder up)', sl: 'shoulder line', unit: '°', tol: 8, hi: 'with the front shoulder higher', lo: 'with the front shoulder lower' },
+    { k: 'sep', name: 'Hip-shoulder separation', unit: '°', tol: 10, hi: 'more', lo: 'less' },
+    { k: 'headX', name: 'Head ahead of hips', sl: 'head', unit: '%', tol: 4, hi: 'farther forward over the hips', lo: 'farther back behind the hips' },
+    { k: 'stance', name: 'Foot spread', sl: 'foot spread', unit: '%', tol: 6, hi: 'wider', lo: 'narrower' },
+  ];
+}
+const fmtA = (v, u) => !Number.isFinite(v) ? '—' : Math.round(v) + (u === '°' ? '°' : '%');
+function biggestDiffs() {
+  const A = cmp.A, B = cmp.B, kind = A.kind, [nA, nB] = cmpNames(), items = [];
+  const phases = kind === 'hit' ? ['Foot plant', 'Contact'] : ['Foot plant', 'Release'];
+  for (const d of angleDefs(kind)) {
+    let best = null;
+    for (const ph of phases) { const va = anglesAt(A, phIdx(A, ph))[d.k], vb = anglesAt(B, phIdx(B, ph))[d.k], df = vb - va; if (Math.abs(df) > d.tol && (!best || Math.abs(df)/d.tol > best.mag)) best = { mag: Math.abs(df)/d.tol, ph, va, vb, df }; }
+    if (!best) continue;
+    const amt = Math.round(Math.abs(best.df)) + (d.unit === '°' ? '°' : '% of height');
+    const text = d.k === 'sep' ? `${nB} has ${amt} ${best.df > 0 ? 'more' : 'less'} hip-shoulder separation than ${nA}`
+      : `${nB}'s ${(d.sl || d.name).toLowerCase()} is ${amt} ${best.df > 0 ? d.hi : d.lo}`;
+    items.push({ mag: best.mag, phase: best.ph, title: `${d.sl ? d.sl[0].toUpperCase() + d.sl.slice(1) : d.name} at ${best.ph.toLowerCase()}`, text: `${text} (${fmtA(best.vb, d.unit)} vs ${fmtA(best.va, d.unit)}).` });
+  }
+  // timing
+  const ms = (e, a, b) => (phIdx(e, b) - phIdx(e, a))/e.fps*1000;
+  const start = kind === 'hit' ? 'Load' : 'Leg lift', key = A.res.phases.keyName;
+  const tA = ms(A, start, key), tB = ms(B, start, key);
+  if (Math.abs(tB - tA) > Math.max(60, 0.15*tA)) items.push({ mag: Math.abs(tB - tA)/60, phase: start, title: `Tempo, ${start.toLowerCase()} to ${key.toLowerCase()}`, text: `${nB} takes ${Math.round(Math.abs(tB - tA))} ms ${tB > tA ? 'longer' : 'less'} (${Math.round(tB)} vs ${Math.round(tA)} ms).` });
+  const fast = kind === 'hit' ? ['Launch', 'Contact'] : ['Foot plant', 'Release'];
+  const fA = ms(A, ...fast), fB = ms(B, ...fast);
+  if (Math.abs(fB - fA) > Math.max(25, 0.2*fA)) items.push({ mag: Math.abs(fB - fA)/25, phase: fast[0], title: `${fast[0]} to ${fast[1].toLowerCase()}`, text: `${nB} is ${Math.round(Math.abs(fB - fA))} ms ${fB > fA ? 'slower' : 'quicker'} through the ${kind === 'hit' ? 'swing' : 'arm action'} (${Math.round(fB)} vs ${Math.round(fA)} ms).` });
+  // energy order
+  const oA = A.res.kin.order.join(' → '), oB = B.res.kin.order.join(' → ');
+  if (oA !== oB || A.res.kin.inOrder !== B.res.kin.inOrder) {
+    const bad = [A, B].filter(e => !e.res.kin.inOrder).map(nmOf);
+    items.push({ mag: 2.6, phase: fast[0], title: 'Energy chain order', text: `${nA}: ${oA}. ${nB}: ${oB}. ${bad.length ? bad.join(' and ') + (bad.length > 1 ? ' are' : ' is') + ' out of order, so speed leaks between segments.' : ''}` });
+  }
+  // checkpoint metrics
+  for (const m of A.res.metrics) {
+    const mb = B.res.metrics.find(x => x.key === m.key); if (!mb || !Number.isFinite(m.value) || !Number.isFinite(mb.value) || m.key === 'seq' || m.key === 'ttc') continue;
+    const tol = DELTA_TOL[m.key] || m.tol/2, df = mb.value - m.value; if (Math.abs(df) <= 2*tol) continue;
+    items.push({ mag: Math.abs(df)/(2*tol), phase: m.phase, title: m.label, text: `${nB}: ${fmtShort(mb.value, m.unit)}, ${nA}: ${fmtShort(m.value, m.unit)}.${mb.status !== 'good' && mb.cue ? ' ' + mb.cue : ''}` });
+  }
+  return items.sort((a, b) => b.mag - a.mag).slice(0, 6);
+}
+function segRows() {
+  const A = cmp.A, B = cmp.B, names = [];
+  for (const s of [...A.res.kin.segs, ...B.res.kin.segs]) if (!names.includes(s.name)) names.push(s.name);
+  const peakMs = (e, s) => (s.peak - e.key)/e.fps*1000;
+  const spd = (e, s) => /Hips|Torso/.test(s.name) ? Math.round(s.peakVal) + '°/s' : mphH(s.peakVal, e.heightIn);
+  return names.map(n => { const sa = A.res.kin.segs.find(s => s.name === n), sb = B.res.kin.segs.find(s => s.name === n); return { n, ta: sa ? peakMs(A, sa) : NaN, tb: sb ? peakMs(B, sb) : NaN, va: sa ? spd(A, sa) : '—', vb: sb ? spd(B, sb) : '—' }; });
+}
+function drawSeqCharts() {
+  const A = cmp.A, B = cmp.B; if (!A) return;
+  const lo = Math.max(-800, Math.min((A.span[0] - A.key)/A.fps, (B.span[0] - B.key)/B.fps)*1000), hi = Math.min(450, Math.max((A.span[1] - A.key)/A.fps, (B.span[1] - B.key)/B.fps)*1000);
+  [['cSeqA', A, idxA(cmp.t)], ['cSeqB', B, idxB(cmp.t)]].forEach(([id, e, cur]) => {
+    const el = $(id); if (!el) return; const { ctx, w, h, dpr } = canvasCtx(el); ctx.clearRect(0, 0, w, h);
+    const padL = 8*dpr, padR = 8*dpr, padT = 10*dpr, padB = 20*dpr;
+    const X = ms => padL + (ms - lo)/(hi - lo)*(w - padL - padR), Y = v => padT + (1 - v)*(h - padT - padB), msOf = i => (i - e.key)/e.fps*1000;
+    ctx.strokeStyle = css('--line'); ctx.lineWidth = dpr; ctx.beginPath(); ctx.moveTo(padL, Y(0)); ctx.lineTo(w - padR, Y(0)); ctx.stroke();
+    ctx.fillStyle = css('--ink-2'); ctx.font = `${10*dpr}px ${css('--f-mono') || 'monospace'}`; ctx.textAlign = 'center';
+    for (let v = Math.ceil(lo/200)*200; v <= hi; v += 200) { const x = X(v); ctx.fillRect(x - 0.5*dpr, Y(0), dpr, 4*dpr); ctx.fillText(v === 0 ? e.res.phases.keyName : (v > 0 ? '+' : '') + v, x, h - 5*dpr); }
+    ctx.setLineDash([4*dpr, 4*dpr]); ctx.beginPath(); ctx.moveTo(X(0), padT - 4*dpr); ctx.lineTo(X(0), Y(0)); ctx.stroke(); ctx.setLineDash([]);
+    const cols = segColors(), a = Math.max(e.span[0], Math.round(e.key + lo/1000*e.fps)), b = Math.min(e.span[1], Math.round(e.key + hi/1000*e.fps));
+    e.res.kin.segs.forEach((s, si) => {
+      const mx = Math.max(1e-6, ...s.series.slice(a, b + 1)); ctx.strokeStyle = cols[si]; ctx.lineWidth = 2*dpr; ctx.beginPath();
+      for (let i = a; i <= b; i++) { const x = X(msOf(i)), y = Y(s.series[i]/mx); i === a ? ctx.moveTo(x, y) : ctx.lineTo(x, y); } ctx.stroke();
+      if (s.peak >= a && s.peak <= b) { ctx.fillStyle = cols[si]; ctx.beginPath(); ctx.arc(X(msOf(s.peak)), Y(s.series[s.peak]/mx), 4*dpr, 0, Math.PI*2); ctx.fill(); ctx.strokeStyle = css('--surface'); ctx.lineWidth = 2*dpr; ctx.stroke(); }
+    });
+    ctx.strokeStyle = e === A ? css('--pa') : css('--pb'); ctx.lineWidth = 2*dpr; const x = X(msOf(cur)); ctx.beginPath(); ctx.moveTo(x, padT - 6*dpr); ctx.lineTo(x, Y(0)); ctx.stroke();
+  });
+}
+function timelineHtml() {
+  const A = cmp.A, B = cmp.B, ms = (e, i) => (i - e.key)/e.fps*1000;
+  let lo = Infinity, hi = -Infinity; for (const e of [A, B]) { const l = e.res.phases.list; lo = Math.min(lo, ms(e, l[0][1])); hi = Math.max(hi, ms(e, l[l.length - 1][1])); }
+  const X = v => ((v - lo)/(hi - lo)*100).toFixed(2) + '%';
+  const bar = (e, col) => { const l = e.res.phases.list; let segs = ''; for (let k = 0; k < l.length - 1; k++) { const a = ms(e, l[k][1]), b = ms(e, l[k+1][1]); segs += `<span class="tl-seg" style="left:${X(a)};width:calc(${X(b)} - ${X(a)});background:${col};opacity:${k % 2 ? 0.45 : 0.9}" title="${esc(l[k][0])} to ${esc(l[k+1][0])}"></span>`; } return `<div class="tl-row"><span class="tl-name">${esc(nmOf(e))}</span><div class="tl-bar">${segs}<i class="tl-key" style="left:${X(0)}"></i></div></div>`; };
+  const stp = hi - lo > 1100 ? 400 : 200; let ticks = ''; for (let v = Math.ceil(lo/stp)*stp; v <= hi; v += stp) { if (v !== 0 && Math.abs(v) < stp) continue; if (v - lo < (hi - lo)*0.06) continue; ticks += `<span style="left:${X(v)}">${v === 0 ? esc(A.res.phases.keyName) : (v > 0 ? '+' : '') + v}</span>`; }
+  return `<div class="tl">${bar(A, 'var(--pa)')}${bar(B, 'var(--pb)')}<div class="tl-row"><span class="tl-name"></span><div class="tl-axis">${ticks}</div></div></div>`;
+}
+function pathRows() {
+  const A = cmp.A, B = cmp.B, kind = A.kind;
+  const len = (e, pts, a, b) => { let s = 0; for (let i = a + 1; i <= b; i++) if (pts[i] && pts[i-1]) s += Math.hypot(pts[i][0] - pts[i-1][0], pts[i][1] - pts[i-1][1]); return s*100; };
+  const rows = [];
+  if (kind === 'hit') {
+    rows.push(['Hand path, launch to contact', ...[A, B].map(e => Math.round(len(e, e.hands, phIdx(e, 'Launch'), e.key)) + '%')]);
+    rows.push(['Barrel path, launch to contact', ...[A, B].map(e => e.seq.batOk ? Math.round(len(e, e.path, phIdx(e, 'Launch'), e.key)) + '% of height' : '—')]);
+    rows.push(['Peak hand speed', ...[A, B].map(e => mphH(e.seq.info && e.seq.info.handSpeed, e.heightIn))]);
+    rows.push(['Peak barrel speed (estimate)', ...[A, B].map(e => mphH(e.seq.info && e.seq.info.batSpeed, e.heightIn))]);
+    rows.push(['Hands height at contact', ...[A, B].map(e => Math.round(-e.hands[e.key][1]*100) + '%')]);
+  } else {
+    const S = e => sideMap(e.seq.leadLeft);
+    rows.push(['Arm path, foot plant to release', ...[A, B].map(e => Math.round(len(e, e.path, phIdx(e, 'Foot plant'), e.key)) + '%')]);
+    rows.push(['Release height', ...[A, B].map(e => Math.round(-e.seq.frames[e.key][S(e).bWr*2+1]*100) + '%')]);
+    rows.push(['Arm slot at release', ...[A, B].map(e => Number.isFinite(e.seq.info && e.seq.info.armSlot) ? Math.round(e.seq.info.armSlot) + '°' : '—')]);
+    rows.push(['Hand speed at release (estimate)', ...[A, B].map(e => mphH(e.seq.info && e.seq.info.handSpeed, e.heightIn))]);
+  }
+  return rows;
+}
+
+/* ---------------- compare view ---------------- */
+function cmpOptions(sel) {
+  const kind = st.mode, M = MODE[kind], groups = {};
+  for (const r of recsFor(kind)) { const g = r.player || 'No player set'; (groups[g] = groups[g] || []).push(r); }
+  let html = validCmpId(CURRENT) ? `<option value="${CURRENT}">Open now: ${esc(st.name)} (not saved)</option>` : '';
+  for (const [g, list] of Object.entries(groups)) html += `<optgroup label="${esc(g)}">` + list.map(r => `<option value="${esc(r.id)}">${esc(r.name)} · ${r.overall}</option>`).join('') + '</optgroup>';
+  html += `<optgroup label="Samples"><option value="${SAMPLE_A}">Sample adult ${M.noun}</option><option value="${SAMPLE_B}">Sample youth ${M.noun}</option></optgroup>`;
+  return html;
+}
+function renderCompare(reset) {
+  if (!validCmpId(cmp.aId) || !validCmpId(cmp.bId)) { [cmp.aId, cmp.bId] = defaultPair(); reset = true; }
+  if (!validCmpId(cmp.bId) || cmp.bId === cmp.aId) { const [a, b] = defaultPair(); cmp.bId = b === cmp.aId ? a : b; }
+  const A = buildEntry(cmp.aId), B = buildEntry(cmp.bId); if (!A || !B) return;
+  const changed = !cmp.A || cmp.A !== A || cmp.B !== B; cmp.A = A; cmp.B = B;
+  const M = MODE[st.mode];
+  $('cmpTitle').textContent = 'Compare two ' + M.nouns;
+  for (const [id, v] of [['cmpA', cmp.aId], ['cmpB', cmp.bId]]) { const s = $(id); if (document.activeElement !== s) { s.innerHTML = cmpOptions(); s.value = v; } }
+  const samples = cmp.aId.startsWith('sample:') && cmp.bId.startsWith('sample:');
+  const lr = A.seq.leadLeft !== B.seq.leadLeft;
+  $('cmpNote').innerHTML = samples ? `Showing two built-in samples. Save your son's ${M.noun} and yours under each player's name in Analyze, then pick them here.`
+    : `Both skeletons are scaled to the same height${lr ? ', and the lefty is mirrored so both face the same way' : ''}. ${A.heightIn !== B.heightIn ? `Real size shows ${esc(nmOf(A))} at ${fmtHt(A.heightIn)} and ${esc(nmOf(B))} at ${fmtHt(B.heightIn)}.` : ''}`;
+  if (changed || reset) { cmp.t = (phIdx(A, A.res.phases.list[0][0]) - A.key)/A.fps; cmp.phase = A.res.phases.keyName; computeCmpVB(); }
+  $('cPhaseChips').innerHTML = `<span class="row-lbl" style="align-self:center;margin-right:4px">Phase</span>` + A.res.phases.list.map(([n]) => `<button class="chip phase" data-cph="${esc(n)}">${esc(n)}</button>`).join('');
+  const [nA, nB] = cmpNames();
+  $('cLegend').innerHTML = `<span><i style="background:var(--pa)"></i>${esc(nA)}</span><span><i style="background:var(--pb)"></i>${esc(nB)}</span>${cmp.diffs ? '<span><i style="background:var(--fix);height:8px;width:8px;border-radius:50%"></i>Joints over 5% of height apart</span>' : ''}${cmp.paths ? `<span><i style="background:var(--ink-2)"></i>${A.kind === 'hit' ? 'Barrel path, dashes are hand path' : 'Throwing hand path'}</span>` : ''}`;
+  renderCompareReport();
+  drawCompare();
+}
+const fmtHt = i => Math.floor(i/12) + '′' + (i % 12) + '″';
+function renderCompareReport() {
+  const A = cmp.A, B = cmp.B, kind = A.kind, [nA, nB] = cmpNames(), M = MODE[kind];
+  const items = biggestDiffs();
+  const ph = cmp.phase || A.res.phases.keyName;
+  const aA = anglesAt(A, phIdx(A, ph)), aB = anglesAt(B, phIdx(B, ph));
+  const segs = segRows(), cols = segColors();
+  const order = e => e.res.kin.order.map((n, k) => `${k ? '<span class="muted">→</span>' : ''}<b style="background:${cols[e.res.kin.segs.findIndex(s => s.name === n)]}">${esc(n)}</b>`).join('');
+  const gaps = (e) => { const s = e.res.kin.segs; const out = []; for (let k = 0; k < s.length - 1; k++) out.push(Math.round((s[k+1].peak - s[k].peak)/e.fps*1000)); return out; };
+  const gA = gaps(A), gB = gaps(B), segNames = A.res.kin.segs.map(s => s.name);
+  const phl = A.res.phases.list, ivA = [], ivB = [];
+  for (let k = 0; k < phl.length - 1; k++) { const a = phl[k][0], b = phl[k+1][0]; ivA.push((phIdx(A, b) - phIdx(A, a))/A.fps*1000); ivB.push((phIdx(B, b) - phIdx(B, a))/B.fps*1000); }
+  const flagT = (x, y) => Math.abs(y - x) > Math.max(30, 0.25*Math.abs(x)) ? (Math.abs(y - x) > Math.max(60, 0.5*Math.abs(x)) ? 'big' : 'off') : '';
+  const sgn = v => (Math.round(v) > 0 ? '+' : '') + Math.round(v);
+  const head = `<tr><th></th><th style="text-align:right"><span class="who" style="--c:var(--pa)">${esc(nA)}</span></th><th style="text-align:right"><span class="who" style="--c:var(--pb)">${esc(nB)}</span></th><th style="text-align:right">Diff</th></tr>`;
+  $('cReport').innerHTML = `
+  <div class="card">
+    <div class="eyebrow">${esc(nA)} vs ${esc(nB)}</div>
+    <h2>What's different</h2>
+    ${items.length ? `<ol class="diff-list">${items.map(it => `<li><div><b>${esc(it.title)}</b><p class="small" style="margin-top:2px">${esc(it.text)}</p><button class="linkbtn" data-cph="${esc(it.phase)}">Show at ${esc(it.phase.toLowerCase())}</button></div></li>`).join('')}</ol>` : `<p class="muted small">These two ${M.nouns} are very close. No joint, timing or energy difference stands out.</p>`}
+  </div>
+
+  <div class="card">
+    <div class="eyebrow">Joint by joint</div>
+    <h2>Body position at ${esc(ph.toLowerCase())}</h2>
+    <div class="chips" style="margin-bottom:10px">${A.res.phases.list.map(([n]) => `<button class="chip" data-cph="${esc(n)}" aria-pressed="${n === ph}">${esc(n)}</button>`).join('')}</div>
+    <div class="tbl"><table class="delta"><thead>${head}</thead><tbody>
+    ${angleDefs(kind).map(d => { const va = aA[d.k], vb = aB[d.k], df = vb - va; const cls = Math.abs(df) > 2*d.tol ? 'big' : Math.abs(df) > d.tol ? 'off' : ''; return `<tr class="${cls}"><td>${esc(d.name)}</td><td class="num">${fmtA(va, d.unit)}</td><td class="num">${fmtA(vb, d.unit)}</td><td class="num">${sgn(df)}${d.unit === '°' ? '°' : '%'}</td></tr>`; }).join('')}
+    </tbody></table></div>
+    <p class="note" style="margin-top:8px">Each player is measured at their own ${esc(ph.toLowerCase())}. Orange and red rows are the biggest gaps. % values are percent of each player's height.</p>
+  </div>
+
+  <div class="card">
+    <div class="eyebrow">Energy chain</div>
+    <h2>How energy moves up the body</h2>
+    <p class="muted small">Speed of each segment, lined up on ${esc(A.res.phases.keyName.toLowerCase())}. In a good chain each segment peaks after the one below it, and each one goes faster.</p>
+    <div class="seq-pair">
+      <div><div class="seq-lbl"><span class="who" style="--c:var(--pa)">${esc(nA)}</span><span class="pill ${A.res.kin.inOrder ? 'good' : 'fix'}">${A.res.kin.inOrder ? 'In order' : 'Out of order'}</span></div><div class="chart-wrap" style="height:130px"><canvas id="cSeqA"></canvas></div><div class="order">${order(A)}</div></div>
+      <div><div class="seq-lbl"><span class="who" style="--c:var(--pb)">${esc(nB)}</span><span class="pill ${B.res.kin.inOrder ? 'good' : 'fix'}">${B.res.kin.inOrder ? 'In order' : 'Out of order'}</span></div><div class="chart-wrap" style="height:130px"><canvas id="cSeqB"></canvas></div><div class="order">${order(B)}</div></div>
+    </div>
+    <div class="tbl" style="margin-top:12px"><table class="delta"><thead><tr><th>Peak</th><th style="text-align:right">${esc(nA)}</th><th style="text-align:right">${esc(nB)}</th><th style="text-align:right">${esc(nA)}</th><th style="text-align:right">${esc(nB)}</th></tr><tr><th></th><th style="text-align:right" colspan="2">ms vs ${esc(A.res.phases.keyName.toLowerCase())}</th><th style="text-align:right" colspan="2">peak speed</th></tr></thead><tbody>
+    ${segs.map(r => `<tr class="${Number.isFinite(r.ta) && Number.isFinite(r.tb) ? flagT(r.ta, r.tb) : ''}"><td>${esc(r.n)}</td><td class="num">${Number.isFinite(r.ta) ? sgn(r.ta) : '—'}</td><td class="num">${Number.isFinite(r.tb) ? sgn(r.tb) : '—'}</td><td class="num">${r.va}</td><td class="num">${r.vb}</td></tr>`).join('')}
+    </tbody></table></div>
+    <h3 style="margin-top:14px">Hand-offs between segments</h3>
+    <div class="tbl" style="margin-top:6px"><table class="delta"><thead>${head}</thead><tbody>
+    ${gA.map((g, k) => { const gb = gB[k]; const nmx = segNames[k] + ' → ' + segNames[k+1]; const bad = v => v < 0; return `<tr class="${Number.isFinite(gb) && (bad(g) !== bad(gb) || Math.abs(gb - g) > 30) ? 'off' : ''}"><td>${esc(nmx)}</td><td class="num">${g} ms${bad(g) ? ' ⚠' : ''}</td><td class="num">${Number.isFinite(gb) ? gb + ' ms' + (bad(gb) ? ' ⚠' : '') : '—'}</td><td class="num">${Number.isFinite(gb) ? sgn(gb - g) : '—'}</td></tr>`; }).join('')}
+    </tbody></table></div>
+    <p class="note" style="margin-top:8px">A hand-off is the time from one segment's peak to the next. ⚠ means the upper segment peaked first, so energy leaked. Hip and torso speeds are rotation estimates from the video; mph values use each player's height.</p>
+  </div>
+
+  <div class="card">
+    <div class="eyebrow">Timing</div>
+    <h2>Phase by phase</h2>
+    ${timelineHtml()}
+    <div class="tbl" style="margin-top:12px"><table class="delta"><thead>${head}</thead><tbody>
+    ${ivA.map((v, k) => `<tr class="${flagT(v, ivB[k])}"><td>${esc(phl[k][0])} → ${esc(phl[k+1][0].toLowerCase())}</td><td class="num">${Math.round(v)} ms</td><td class="num">${Math.round(ivB[k])} ms</td><td class="num">${sgn(ivB[k] - v)}</td></tr>`).join('')}
+    </tbody></table></div>
+    <p class="note" style="margin-top:8px">Bars are lined up on ${esc(A.res.phases.keyName.toLowerCase())}. Switch the player to <b>Real timing</b> to watch the tempo difference instead of matching phases.</p>
+  </div>
+
+  <div class="card">
+    <div class="eyebrow">${kind === 'hit' ? 'Swing path' : 'Arm path'}</div>
+    <h2>${kind === 'hit' ? 'Hands and barrel' : 'Arm action'}</h2>
+    <div class="tbl"><table class="delta"><thead><tr><th></th><th style="text-align:right"><span class="who" style="--c:var(--pa)">${esc(nA)}</span></th><th style="text-align:right"><span class="who" style="--c:var(--pb)">${esc(nB)}</span></th></tr></thead><tbody>
+    ${pathRows().map(r => `<tr><td>${esc(r[0])}</td><td class="num">${esc(r[1])}</td><td class="num">${esc(r[2])}</td></tr>`).join('')}
+    </tbody></table></div>
+    <p class="note" style="margin-top:8px">Lengths and heights are percent of each player's height. ${kind === 'hit' ? 'A shorter hand path at the same barrel speed means a quicker, more direct swing.' : 'Release height and arm slot are relative to each player\'s height.'}</p>
+  </div>
+
+  <div class="card">
+    <div class="eyebrow">Checkpoints</div>
+    <h2>Scores side by side</h2>
+    <div class="tbl"><table class="delta"><thead>${head}</thead><tbody>
+    <tr><td><b>Mechanics score</b></td><td class="num"><b>${A.res.overall}</b></td><td class="num"><b>${B.res.overall}</b></td><td class="num">${sgn(B.res.overall - A.res.overall)}</td></tr>
+    ${A.res.metrics.map(m => { const mb = B.res.metrics.find(x => x.key === m.key); if (!mb) return ''; const tol = DELTA_TOL[m.key] || m.tol/2, df = mb.value - m.value; const cls = Math.abs(df) > 2*tol ? 'big' : Math.abs(df) > tol ? 'off' : ''; return `<tr class="${cls}"><td>${esc(m.label)}</td><td class="num"><i class="dot ${m.status}"></i>${fmtShort(m.value, m.unit)}</td><td class="num"><i class="dot ${mb.status}"></i>${fmtShort(mb.value, mb.unit)}</td><td class="num">${fmtNum(df, m.unit) > 0 ? '+' : ''}${fmtShort(df, m.unit)}</td></tr>`; }).join('')}
+    </tbody></table></div>
+    <p class="note" style="margin-top:8px">Dots show each player's own grade on that check: green on target, amber watch, red fix.</p>
+  </div>`;
+  requestAnimationFrame(drawSeqCharts);
+}
+function cmpSeekPhase(name) {
+  const A = cmp.A; cmpPlay(false); cmp.t = (phIdx(A, name) - A.key)/A.fps; cmp.phase = name; renderCompareReport(); drawCompare();
+}
+$('cmpA').onchange = e => { cmp.aId = e.target.value; cmpPlay(false); renderCompare(true); };
+$('cmpB').onchange = e => { cmp.bId = e.target.value; cmpPlay(false); renderCompare(true); };
+$('cmpSwap').onclick = () => { [cmp.aId, cmp.bId] = [cmp.bId, cmp.aId]; renderCompare(true); };
+$('cPlay').onclick = () => cmpPlay(!cmp.playing);
+$('cPrev').onclick = () => { cmpPlay(false); cmp.t -= 1/cmp.A.fps; const [r0] = tRange(); cmp.t = Math.max(r0, cmp.t); drawCompare(); };
+$('cNext').onclick = () => { cmpPlay(false); cmp.t += 1/cmp.A.fps; const [, r1] = tRange(); cmp.t = Math.min(r1, cmp.t); drawCompare(); };
+$('cScrub').oninput = e => { cmpPlay(false); const [r0, r1] = tRange(); cmp.t = r0 + (+e.target.value/1000)*(r1 - r0); drawCompare(); };
+document.querySelectorAll('[data-cspeed]').forEach(b => b.onclick = () => { cmp.speed = +b.dataset.cspeed; document.querySelectorAll('[data-cspeed]').forEach(x => x.setAttribute('aria-pressed', x === b)); });
+document.querySelectorAll('[data-copt]').forEach(b => b.onclick = () => {
+  const [k, v] = b.dataset.copt.split(':');
+  if (v) { cmp[k] = v; document.querySelectorAll(`[data-copt^="${k}:"]`).forEach(x => x.setAttribute('aria-pressed', x === b)); }
+  else { cmp[k] = !cmp[k]; b.setAttribute('aria-pressed', cmp[k]); }
+  if (k === 'size') computeCmpVB();
+  if (k === 'sync') { const [r0, r1] = tRange(); cmp.t = clamp(cmp.t, r0, r1); }
+  renderCompare();
+});
+document.addEventListener('click', e => { const p = e.target.closest('[data-cph]'); if (p && st.tab === 'Compare') { cmpSeekPhase(p.dataset.cph); if (p.closest('#cReport')) $('cStage').scrollIntoView({ behavior: 'smooth', block: 'center' }); } });
+new ResizeObserver(() => { if (st.tab === 'Compare' && cmp.A) drawCompare(); }).observe($('cStage'));
+
+/* ---------------- live camera: preview with skeleton, record in the app (standalone build) ---------------- */
+const cam = { stream: null, rec: null, chunks: [], facing: 'environment', live: false, t0: 0, crop: null, posing: false, wake: null, timerI: 0, autoStop: 0, delayT: 0, discard: false };
+const camEl = $('cam'), camVid = $('camVid'), camCv = $('camCv');
+function camStatus(t, ok) { const s = $('camStatus'); s.textContent = t; s.dataset.ok = ok ? '1' : ''; }
+async function openCam() {
+  if (st.busy) { toast('Wait for the current analysis to finish.'); return; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast('This browser cannot open the camera. Use Upload a video instead.'); return; }
+  camEl.hidden = false; document.documentElement.classList.add('cam-open');
+  $('camHint').textContent = st.mode === 'hit' ? 'Face the hitter\'s chest from 15–20 ft. Whole body and bat in frame.' : 'Film from the side, 20–30 ft away. Whole body in frame.';
+  camStatus('Opening camera…');
+  const ok = await startStream(); if (!ok) return;
+  camStatus('Loading tracker…');
+  ensureModel().catch(() => camStatus('Tracker did not load. You can still record.'));
+  cam.live = true; cam.crop = null; requestAnimationFrame(liveLoop);
+  try { cam.wake = navigator.wakeLock ? await navigator.wakeLock.request('screen') : null; } catch {}
+}
+async function startStream() {
+  stopStream();
+  try {
+    cam.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: cam.facing }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 60, max: 60 } } });
+  } catch (e) {
+    camStatus(e && e.name === 'NotAllowedError' ? 'Camera access is blocked. Allow the camera for this site in your browser settings, then tap Record again.' : 'Could not open the camera. Close other apps using it and try again.');
+    return false;
+  }
+  camVid.srcObject = cam.stream; camVid.muted = true; camVid.playsInline = true;
+  try { await camVid.play(); } catch {}
+  return true;
+}
+function stopStream() { if (cam.stream) cam.stream.getTracks().forEach(t => t.stop()); cam.stream = null; camVid.srcObject = null; }
+function closeCam() {
+  if (cam.rec && cam.rec.state === 'recording') { cam.discard = true; try { cam.rec.stop(); } catch {} }
+  clearTimeout(cam.delayT); clearTimeout(cam.autoStop); clearInterval(cam.timerI); setRecUi(false);
+  cam.live = false; stopStream(); camEl.hidden = true; document.documentElement.classList.remove('cam-open');
+  if (cam.wake) { cam.wake.release().catch(() => {}); cam.wake = null; }
+}
+async function liveLoop() {
+  if (!cam.live) return;
+  if (model && camVid.videoWidth && !cam.posing) {
+    cam.posing = true;
+    try { const W = camVid.videoWidth, H = camVid.videoHeight; const r = await poseAt(W, H, cam.crop, camVid); cam.crop = r.crop; drawCamPose(r.k, W, H); } catch {}
+    cam.posing = false;
+  }
+  requestAnimationFrame(liveLoop);
+}
+function drawCamPose(k, W, H) {
+  const { ctx, w, h } = canvasCtx(camCv); ctx.clearRect(0, 0, w, h);
+  const fit = videoFit(W, H, w, h), f = new Float32Array(34);
+  for (let j = 0; j < 17; j++) { f[j*2] = k[j*3]; f[j*2+1] = k[j*3+1]; }
+  const seen = j => k[j*3+2] > 0.3;
+  const body = [5, 6, 11, 12, 13, 14].filter(seen).length;
+  if (body >= 4) drawSkel(ctx, f, (x, y) => [fit.x + x*fit.s, fit.y + y*fit.s], { colors: { l: css('--lead'), b: css('--back'), c: '#E9EEF4' }, scale: fit.s*H*0.6, dim: k, leadLeft: st.hand[st.mode] === 'R' });
+  if (cam.rec && cam.rec.state === 'recording') return;
+  if (body < 4) camStatus('No player found yet. Point the camera at the whole body.');
+  else if (!(seen(0) || seen(1) || seen(2)) || !(seen(15) || seen(16))) camStatus('Step back or zoom out so head to feet are in frame.');
+  else camStatus('Ready. Whole body in frame.', true);
+}
+function pickMime() {
+  if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
+  for (const m of ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']) if (MediaRecorder.isTypeSupported(m)) return m;
+  return '';
+}
+function setRecUi(on) {
+  const b = $('camRec'); b.classList.toggle('on', on); b.setAttribute('aria-label', on ? 'Stop recording' : 'Start recording');
+  $('camFlip').disabled = on; clearInterval(cam.timerI);
+  if (on) { const t = $('camTimer'); cam.timerI = setInterval(() => { const s = Math.floor((performance.now() - cam.t0)/1000); t.textContent = '0:' + String(s).padStart(2, '0'); }, 250); camStatus('Recording. Take the ' + MODE[st.mode].noun + ', then tap stop.', true); }
+  else $('camTimer').textContent = '0:00';
+}
+function startRec() {
+  if (!cam.stream) return;
+  if (!window.MediaRecorder) { toast('This browser cannot record video. Use Upload a video instead.'); return; }
+  const mime = pickMime(); cam.chunks = []; cam.discard = false;
+  try { cam.rec = new MediaRecorder(cam.stream, mime ? { mimeType: mime, videoBitsPerSecond: 8000000 } : undefined); }
+  catch { cam.rec = new MediaRecorder(cam.stream); }
+  cam.rec.ondataavailable = e => { if (e.data && e.data.size) cam.chunks.push(e.data); };
+  cam.rec.onstop = () => {
+    const dur = (performance.now() - cam.t0)/1000, type = (cam.rec && cam.rec.mimeType) || mime || 'video/webm';
+    const blob = new Blob(cam.chunks, { type }); setRecUi(false);
+    if (cam.discard || !blob.size) return;
+    if (dur < 1) { toast('That clip was too short. Record from the setup through the finish.'); return; }
+    closeCam(); setTab('Analyze');
+    const file = new File([blob], MODE[st.mode].noun + (type.includes('mp4') ? '.mp4' : '.webm'), { type });
+    analyzeFile(file, { slow: 1, duration: dur });
+  };
+  cam.rec.start(250); cam.t0 = performance.now(); setRecUi(true);
+  cam.autoStop = setTimeout(stopRec, 20000);
+}
+function stopRec() { clearTimeout(cam.autoStop); if (cam.rec && cam.rec.state === 'recording') cam.rec.stop(); }
+$('camBtn').onclick = openCam;
+$('camClose').onclick = closeCam;
+$('camFlip').onclick = async () => { cam.facing = cam.facing === 'environment' ? 'user' : 'environment'; cam.crop = null; await startStream(); };
+$('camRec').onclick = () => {
+  if (cam.rec && cam.rec.state === 'recording') { stopRec(); return; }
+  if (cam.delayT) { clearTimeout(cam.delayT); cam.delayT = 0; camStatus('Countdown canceled.'); return; }
+  if (!$('camDelay').checked) { startRec(); return; }
+  let n = 3; camStatus('Recording in 3…', true);
+  const tick = () => { n--; if (n <= 0) { cam.delayT = 0; startRec(); return; } camStatus('Recording in ' + n + '…', true); cam.delayT = setTimeout(tick, 1000); };
+  cam.delayT = setTimeout(tick, 1000);
+};
+document.addEventListener('visibilitychange', () => { if (document.hidden && cam.live && !(cam.rec && cam.rec.state === 'recording')) closeCam(); });
+
+/* ---------------- standalone extras: backup, install, offline ---------------- */
+$('camBtn').hidden = false;
+$('recBtn').classList.remove('primary');
+$('recLbl').dataset.standalone = '1';
+$('recHint').innerHTML = '<b>Record</b> opens the camera right here and tracks the skeleton live. <b>Upload</b> takes a clip you already filmed, including slo-mo.';
+$('storeTag').textContent = 'Saved on this phone';
+$('libNote').textContent = 'Each rep stores the skeleton, phases and numbers, not the video. Reps are saved on this phone, so back up your library now and then.';
+$('backupRow').hidden = false;
+$('bkSave').onclick = () => {
+  const data = JSON.stringify({ app: 'SwingLab', v: 1, exported: new Date().toISOString(), records: st.records, prefs: st.prefs });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
+  a.download = 'swinglab-backup-' + new Date().toISOString().slice(0, 10) + '.json'; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); toast('Backup saved to your downloads.');
+};
+$('bkIn').onchange = async e => {
+  const f = e.target.files && e.target.files[0]; e.target.value = ''; if (!f) return;
+  try {
+    const d = JSON.parse(await f.text()); if (!d || !Array.isArray(d.records)) throw 0;
+    const l = store.readLocal(); const have = new Set((l.records || []).map(r => r.id));
+    const add = d.records.filter(r => r && r.id && r.kind && !have.has(r.id));
+    l.records = (l.records || []).concat(add);
+    const pl = (l.prefs && l.prefs.players) || []; const ids = new Set(pl.map(p => p.id));
+    l.prefs = { ...(d.prefs || {}), ...(l.prefs || {}), players: pl.concat(((d.prefs && d.prefs.players) || []).filter(p => !ids.has(p.id))) };
+    if (!store.writeLocal(l)) throw new Error('space');
+    st.records = l.records; st.prefs = l.prefs; renderAll(); toast(`Restored ${add.length} rep${add.length === 1 ? '' : 's'}.`);
+  } catch (err) { toast(err && err.message === 'space' ? 'This phone ran out of space for saved reps.' : 'That file is not a SwingLab backup.'); }
+};
+{ // install prompt
+  const standaloneNow = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  let dismissed = false; try { dismissed = localStorage.getItem('swinglab.installHide') === '1'; } catch {}
+  const card = $('installCard');
+  if (!standaloneNow && !dismissed) {
+    const ios = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    $('installTxt').innerHTML = ios ? 'Install SwingLab on your home screen: tap <b>Share</b> in Safari, then <b>Add to Home Screen</b>. It opens full screen like a regular app.' : 'Install SwingLab on your home screen so it opens full screen like a regular app.';
+    card.hidden = ios ? false : true;
+    window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); card.hidden = false; const b = $('installBtn'); b.hidden = false; b.onclick = async () => { e.prompt(); try { await e.userChoice; } catch {} card.hidden = true; }; });
+  }
+  $('installHide').onclick = () => { card.hidden = true; try { localStorage.setItem('swinglab.installHide', '1'); } catch {} };
+}
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+
+
+// boot
+syncPlayers();
+setMode(st.mode);
+store.init();
+requestAnimationFrame(loop);
+setTimeout(() => { ensureModel().catch(() => {}); }, 1500);
+})();
+
+</script>
+
+</body>
+</html>
