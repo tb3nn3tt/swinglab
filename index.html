@@ -895,54 +895,127 @@ function compareRecords(curMetrics, rec) {
   });
 }
 
-/* ---------- demo motions (procedural sample data) ---------- */
-function kf(o) { // o: {joint: [x,y]}; returns Float32Array frame
-  const f = new Float32Array(NJ*2);
-  const map = { nose:0, lEye:1, rEye:2, lEar:3, rEar:4, lSh:5, rSh:6, lEl:7, rEl:8, lWr:9, rWr:10, lHip:11, rHip:12, lKn:13, rKn:14, lAn:15, rAn:16 };
-  for (const [k, v] of Object.entries(o)) { f[map[k]*2] = v[0]; f[map[k]*2+1] = v[1]; }
-  if (!o.lEye) { f[2] = f[0]+0.02; f[3] = f[1]-0.02; f[4] = f[0]-0.02; f[5] = f[1]-0.02; f[6] = f[0]+0.045; f[7] = f[1]-0.01; f[8] = f[0]-0.045; f[9] = f[1]-0.01; }
-  return f;
+/* ---------- pro model: a 3D swing / delivery built from published biomechanics norms ----------
+   World: X toward the pitcher (hitting) or plate (pitching), Y up, Z toward the camera, which faces the
+   player's chest (hitting) or films from the side (pitching). Segment lengths are fractions of height
+   (Winter's anthropometric tables). Timing and rotation targets follow pro studies: pelvis peaks before
+   torso before arms before bat/hand; ~150 ms from launch to contact; ~140 ms from foot plant to release. */
+const v3 = { add: (a, b) => [a[0]+b[0], a[1]+b[1], a[2]+b[2]], sub: (a, b) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]], mul: (a, s) => [a[0]*s, a[1]*s, a[2]*s],
+  dot: (a, b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2], len: a => Math.hypot(a[0], a[1], a[2]), cross: (a, b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]] };
+v3.norm = a => { const l = v3.len(a) || 1; return [a[0]/l, a[1]/l, a[2]/l]; };
+const rotY = (v, deg) => { const r = deg/DEG, c = Math.cos(r), s = Math.sin(r); return [v[0]*c + v[2]*s, v[1], -v[0]*s + v[2]*c]; };
+function pchip(ts, vs) {
+  const n = ts.length, h = [], d = [], m = new Array(n).fill(0);
+  for (let i = 0; i < n - 1; i++) { h[i] = ts[i+1] - ts[i]; d[i] = (vs[i+1] - vs[i])/h[i]; }
+  for (let i = 1; i < n - 1; i++) { if (d[i-1]*d[i] <= 0) continue; const w1 = 2*h[i] + h[i-1], w2 = h[i] + 2*h[i-1]; m[i] = (w1 + w2)/(w1/d[i-1] + w2/d[i]); }
+  return t => {
+    if (t <= ts[0]) return vs[0]; if (t >= ts[n-1]) return vs[n-1];
+    let i = 0; while (t > ts[i+1]) i++;
+    const hh = h[i], s = (t - ts[i])/hh, s2 = s*s, s3 = s2*s;
+    return (2*s3 - 3*s2 + 1)*vs[i] + (s3 - 2*s2 + s)*hh*m[i] + (-2*s3 + 3*s2)*vs[i+1] + (s3 - s2)*hh*m[i+1];
+  };
 }
-function catmull(p0, p1, p2, p3, t) { const t2 = t*t, t3 = t2*t; return 0.5*((2*p1) + (-p0+p2)*t + (2*p0-5*p1+4*p2-p3)*t2 + (-p0+3*p1-3*p2+p3)*t3); }
-function buildDemo(kind) {
-  const fps = 30;
-  const keys = kind === 'hit' ? [
-    [0.00, { nose:[0,-0.90], lSh:[0.10,-0.80], rSh:[-0.10,-0.80], lEl:[0.0,-0.68], rEl:[-0.20,-0.70], lWr:[-0.10,-0.78], rWr:[-0.12,-0.79], lHip:[0.08,-0.50], rHip:[-0.08,-0.50], lKn:[0.12,-0.27], rKn:[-0.13,-0.27], lAn:[0.17,-0.02], rAn:[-0.17,-0.02] }],
-    [0.35, { nose:[-0.01,-0.90], lSh:[0.09,-0.80], rSh:[-0.11,-0.80], lEl:[-0.01,-0.68], rEl:[-0.21,-0.70], lWr:[-0.12,-0.78], rWr:[-0.14,-0.79], lHip:[0.07,-0.50], rHip:[-0.09,-0.50], lKn:[0.12,-0.28], rKn:[-0.14,-0.27], lAn:[0.18,-0.03], rAn:[-0.17,-0.02] }],
-    [0.55, { nose:[-0.02,-0.90], lSh:[0.06,-0.80], rSh:[-0.12,-0.80], lEl:[-0.03,-0.68], rEl:[-0.25,-0.70], lWr:[-0.16,-0.79], rWr:[-0.18,-0.80], lHip:[0.05,-0.50], rHip:[-0.10,-0.50], lKn:[0.13,-0.30], rKn:[-0.15,-0.27], lAn:[0.21,-0.07], rAn:[-0.17,-0.02] }],
-    [0.78, { nose:[0.03,-0.88], lSh:[0.10,-0.79], rSh:[-0.10,-0.80], lEl:[0.0,-0.67], rEl:[-0.22,-0.69], lWr:[-0.14,-0.78], rWr:[-0.16,-0.79], lHip:[0.12,-0.48], rHip:[-0.02,-0.49], lKn:[0.26,-0.27], rKn:[-0.10,-0.26], lAn:[0.34,-0.02], rAn:[-0.17,-0.02] }],
-    [0.86, { nose:[0.06,-0.85], lSh:[0.11,-0.77], rSh:[-0.05,-0.77], lEl:[0.06,-0.66], rEl:[-0.12,-0.64], lWr:[-0.02,-0.70], rWr:[-0.04,-0.71], lHip:[0.12,-0.48], rHip:[0.04,-0.48], lKn:[0.25,-0.26], rKn:[-0.05,-0.25], lAn:[0.34,-0.02], rAn:[-0.16,-0.02] }],
-    [0.93, { nose:[0.10,-0.82], lSh:[0.11,-0.75], rSh:[0.04,-0.73], lEl:[0.17,-0.66], rEl:[0.07,-0.62], lWr:[0.24,-0.62], rWr:[0.22,-0.63], lHip:[0.12,-0.48], rHip:[0.08,-0.47], lKn:[0.23,-0.26], rKn:[-0.01,-0.24], lAn:[0.34,-0.02], rAn:[-0.15,-0.02] }],
-    [1.03, { nose:[0.11,-0.82], lSh:[0.05,-0.77], rSh:[0.10,-0.74], lEl:[0.20,-0.71], rEl:[0.18,-0.68], lWr:[0.34,-0.72], rWr:[0.32,-0.71], lHip:[0.09,-0.48], rHip:[0.12,-0.48], lKn:[0.24,-0.26], rKn:[0.03,-0.25], lAn:[0.34,-0.02], rAn:[-0.13,-0.03] }],
-    [1.45, { nose:[0.09,-0.86], lSh:[-0.02,-0.79], rSh:[0.13,-0.77], lEl:[0.02,-0.86], rEl:[0.12,-0.87], lWr:[-0.06,-0.95], rWr:[-0.08,-0.93], lHip:[0.04,-0.50], rHip:[0.14,-0.50], lKn:[0.25,-0.27], rKn:[0.08,-0.27], lAn:[0.34,-0.02], rAn:[-0.08,-0.05] }],
-  ] : [
-    [0.00, { nose:[0.05,-0.90], lSh:[0.03,-0.80], rSh:[-0.01,-0.80], lEl:[0.0,-0.66], rEl:[0.02,-0.65], lWr:[0.07,-0.68], rWr:[0.07,-0.67], lHip:[0.02,-0.50], rHip:[0.0,-0.50], lKn:[0.07,-0.26], rKn:[-0.06,-0.26], lAn:[0.10,-0.02], rAn:[-0.08,-0.02] }],
-    [0.60, { nose:[0.0,-0.92], lSh:[-0.01,-0.82], rSh:[-0.04,-0.82], lEl:[-0.03,-0.68], rEl:[-0.02,-0.67], lWr:[0.03,-0.70], rWr:[0.03,-0.69], lHip:[-0.01,-0.52], rHip:[-0.03,-0.52], lKn:[0.07,-0.50], rKn:[-0.06,-0.27], lAn:[0.02,-0.30], rAn:[-0.08,-0.02] }],
-    [0.92, { nose:[0.17,-0.86], lSh:[0.15,-0.78], rSh:[0.11,-0.78], lEl:[0.30,-0.74], rEl:[0.04,-0.62], lWr:[0.40,-0.75], rWr:[-0.04,-0.56], lHip:[0.16,-0.47], rHip:[0.13,-0.47], lKn:[0.35,-0.36], rKn:[0.01,-0.25], lAn:[0.45,-0.12], rAn:[-0.08,-0.02] }],
-    [1.05, { nose:[0.29,-0.85], lSh:[0.30,-0.75], rSh:[0.19,-0.75], lEl:[0.42,-0.74], rEl:[0.10,-0.69], lWr:[0.50,-0.72], rWr:[0.06,-0.66], lHip:[0.30,-0.44], rHip:[0.24,-0.44], lKn:[0.52,-0.25], rKn:[0.12,-0.20], lAn:[0.64,-0.02], rAn:[-0.06,-0.04] }],
-    [1.13, { nose:[0.40,-0.82], lSh:[0.42,-0.72], rSh:[0.30,-0.73], lEl:[0.46,-0.68], rEl:[0.22,-0.74], lWr:[0.48,-0.62], rWr:[0.16,-0.85], lHip:[0.38,-0.44], rHip:[0.33,-0.44], lKn:[0.53,-0.24], rKn:[0.20,-0.18], lAn:[0.64,-0.02], rAn:[-0.03,-0.05] }],
-    [1.19, { nose:[0.53,-0.78], lSh:[0.50,-0.68], rSh:[0.44,-0.71], lEl:[0.50,-0.58], rEl:[0.52,-0.78], lWr:[0.60,-0.54], rWr:[0.64,-0.83], lHip:[0.42,-0.43], rHip:[0.39,-0.43], lKn:[0.56,-0.23], rKn:[0.26,-0.17], lAn:[0.64,-0.02], rAn:[0.02,-0.06] }],
-    [1.55, { nose:[0.70,-0.62], lSh:[0.63,-0.60], rSh:[0.60,-0.66], lEl:[0.56,-0.52], rEl:[0.70,-0.48], lWr:[0.50,-0.52], rWr:[0.60,-0.33], lHip:[0.50,-0.45], rHip:[0.48,-0.45], lKn:[0.60,-0.24], rKn:[0.46,-0.30], lAn:[0.64,-0.02], rAn:[0.40,-0.18] }],
-  ];
-  const T = keys[keys.length-1][0] + 0.25, n = Math.round(T*fps);
-  const kfr = keys.map(([t, o]) => [t, kf(o)]);
-  const frames = [];
-  for (let i = 0; i < n; i++) {
-    const t = Math.min(i/fps, keys[keys.length-1][0]);
-    let k = 0; while (k < kfr.length-2 && t > kfr[k+1][0]) k++;
-    const [t1, f1] = kfr[k], [t2, f2] = kfr[k+1]; const f0 = kfr[Math.max(0, k-1)][1], f3 = kfr[Math.min(kfr.length-1, k+2)][1];
-    const u = clamp((t - t1)/(t2 - t1), 0, 1);
-    const o = new Float32Array(NJ*2); for (let q = 0; q < o.length; q++) o[q] = catmull(f0[q], f1[q], f2[q], f3[q], u);
-    frames.push(o);
-  }
-  const seq = { frames, conf: frames.map(() => new Float32Array(NJ).fill(1)), fps, leadLeft: true, H: 1, groundY: 0, originX: 0, fwd: 1, demo: true };
+const curve = keys => { const ts = keys.map(k => k[0]); if (Array.isArray(keys[0][1])) { const fs = keys[0][1].map((_, c) => pchip(ts, keys.map(k => k[1][c]))); return t => fs.map(f => f(t)); } return pchip(ts, keys.map(k => k[1])); };
+function ik(a, c, l1, l2, pole) {
+  let d = v3.sub(c, a), L = v3.len(d); const maxL = (l1 + l2)*0.995;
+  if (L > maxL) { c = v3.add(a, v3.mul(d, maxL/L)); d = v3.sub(c, a); L = maxL; }
+  const dn = v3.mul(d, 1/L), x = (l1*l1 - l2*l2 + L*L)/(2*L), hh = Math.sqrt(Math.max(0, l1*l1 - x*x));
+  let p = v3.sub(pole, v3.mul(dn, v3.dot(pole, dn))); p = v3.norm(p);
+  return { mid: v3.add(v3.add(a, v3.mul(dn, x)), v3.mul(p, hh)), end: c };
+}
+const SEG = { hip: 0.085, sh: 0.112, spine: 0.29, thigh: 0.245, shank: 0.246, upper: 0.186, fore: 0.146 };
+// pose at one instant -> 17 joints projected to the camera (x = X, y = -Y) plus 3D extras
+function poseFrom(p) {
+  const P = p.pelvis, up = v3.norm([-Math.tan(p.tiltBack/DEG), 1, Math.tan(p.tiltZ/DEG)]);
+  const lHip = v3.add(P, rotY([SEG.hip, 0, 0], p.pelvisRot)), bHip = v3.add(P, rotY([-SEG.hip, 0, 0], p.pelvisRot));
+  const Sc = v3.add(P, v3.mul(up, SEG.spine));
+  let lat = rotY([1, 0, 0], p.torsoRot); lat = v3.norm(v3.sub(lat, v3.mul(up, v3.dot(lat, up))));
+  const st = (p.shTilt || 0)/DEG; lat = v3.norm(v3.add(v3.mul(lat, Math.cos(st)), v3.mul(up, Math.sin(st))));
+  const lSh = v3.add(Sc, v3.mul(lat, SEG.sh)), bSh = v3.sub(Sc, v3.mul(lat, SEG.sh));
+  const Hc = v3.add(Sc, v3.mul(v3.norm(v3.add(v3.mul(up, 0.4), [0, 0.6, 0])), 0.125));
+  const pitchR = (p.headDown || 0)/DEG; let f = rotY([0, 0, 1], p.headYaw); f = v3.norm([f[0]*Math.cos(pitchR), -Math.sin(pitchR), f[2]*Math.cos(pitchR)]);
+  const right = v3.norm(v3.cross(f, [0, 1, 0]));
+  const nose = v3.add(v3.add(Hc, v3.mul(f, 0.065)), [0, -0.012, 0]);
+  const eyeC = v3.add(v3.add(Hc, v3.mul(f, 0.05)), [0, 0.012, 0]);
+  const lEye = v3.sub(eyeC, v3.mul(right, 0.032)), rEye = v3.add(eyeC, v3.mul(right, 0.032));
+  const lEar = v3.sub(v3.sub(Hc, v3.mul(right, 0.072)), v3.mul(f, 0.01)), rEar = v3.sub(v3.add(Hc, v3.mul(right, 0.072)), v3.mul(f, 0.01));
+  const lLeg = ik(lHip, p.lAnkle, SEG.thigh, SEG.shank, p.lKneePole), bLeg = ik(bHip, p.bAnkle, SEG.thigh, SEG.shank, p.bKneePole);
+  const lArm = ik(lSh, p.lWrist, SEG.upper, SEG.fore, p.lElbowPole), bArm = ik(bSh, p.bWrist, SEG.upper, SEG.fore, p.bElbowPole);
+  // RHB / RHP: left side leads
+  const J = [nose, lEye, rEye, lEar, rEar, lSh, bSh, lArm.mid, bArm.mid, lArm.end, bArm.end, lHip, bHip, lLeg.mid, bLeg.mid, lLeg.end, bLeg.end];
+  const f2 = new Float32Array(34); J.forEach((q, j) => { f2[j*2] = q[0]; f2[j*2+1] = -q[1]; });
+  return { f: f2, J };
+}
+function proKeys(kind, faults) {
+  const F = faults || {};
   if (kind === 'hit') {
-    const bk = [[0, -105, 0.42], [0.55, -122, 0.42], [0.78, -135, 0.40], [0.86, -165, 0.36], [0.93, 18, 0.22], [1.03, 30, 0.36], [1.45, 200, 0.38]];
-    seq.batTips = frames.map((f, i) => { const t = i/fps; let k = 0; while (k < bk.length-2 && t > bk[k+1][0]) k++; const [a1, d1, l1] = bk[k], [a2, d2, l2] = bk[k+1]; let dd = ((d2 - d1 + 540) % 360) - 180; if (k === 5) dd = d2 - d1 - 360; const u = sm01(clamp((t - a1)/(a2 - a1), 0, 1)); const ang = (d1 + dd*u)/DEG, L = l1 + (l2 - l1)*u; const h = mid(f, 9, 10); return { x: h[0] + Math.cos(ang)*L, y: h[1] + Math.sin(ang)*L, c: 1 }; });
-    addBatSpeed(seq);
+    // stance 0–0.5, load to 0.85, stride lands 0.95, launch 1.00, contact 1.15, extension 1.23, finish to 1.75
+    const TFP = 0.95, TC = 1.15;
+    const front = F.overstride ? 0.52 : 0.33;
+    return { T: 1.85, fps: 60,
+      pelvis: curve([[0, [0, 0.50, 0]], [0.5, [0, 0.50, 0]], [0.82, [-0.03, 0.495, 0]], [TFP, [0.03, 0.47 - (F.headDrop ? 0.02 : 0), 0]], [TC, [0.075, 0.468 - (F.headDrop ? 0.06 : 0), 0.01]], [1.4, [0.09, 0.47, 0]], [1.85, [0.08, 0.49, 0]]]),
+      pelvisRot: curve([[0, 0], [0.5, 0], [0.84, -12], [TFP, 6], [1.04, 42], [1.10, 66], [TC, 80], [1.3, 98], [1.85, 104]]),
+      torsoRot: curve(F.earlyOpen ? [[0, -4], [0.5, -6], [0.8, -14], [TFP, 32], [1.02, 55], [1.08, 78], [TC, 105], [1.3, 148], [1.85, 160]]
+        : [[0, -4], [0.5, -6], [0.84, -26], [TFP, -22], [1.01, -6], [1.07, 30], [1.11, 62], [TC, 86], [1.3, 140], [1.85, 158]]),
+      tiltBack: curve([[0, 4], [0.84, 6], [TFP, 9], [TC, 20 - (F.headDrop ? 6 : 0)], [1.4, 16], [1.85, 10]]),
+      tiltZ: curve([[0, 22], [TFP, 24], [TC, 26 + (F.headDrop ? 14 : 0)], [1.5, 18], [1.85, 14]]),
+      shTilt: curve([[0, 2], [0.84, 4], [TFP, 4], [TC, -14], [1.4, 10], [1.85, 14]]),
+      headYaw: curve([[0, 82], [TC, 86], [1.4, 84], [1.85, 70]]), headDown: curve([[0, 8], [TFP, 10], [TC, 18], [1.35, 16], [1.85, 6]]),
+      lAnkle: curve([[0, [0.15, 0.045, -0.02]], [0.5, [0.15, 0.045, -0.02]], [0.78, [0.11, 0.075, -0.03]], [0.88, [front - 0.05, 0.07, -0.02]], [TFP, [front, 0.045, -0.02]], [1.85, [front, 0.045, -0.02]]]),
+      bAnkle: curve([[0, [-0.15, 0.045, 0]], [TFP, [-0.15, 0.045, 0]], [TC, [-0.135 + (F.backSlide ? 0.09 : 0), 0.07, 0.01]], [1.4, [-0.11 + (F.backSlide ? 0.09 : 0), 0.09, 0.02]], [1.85, [-0.1 + (F.backSlide ? 0.09 : 0), 0.09, 0.02]]]),
+      lKneePole: curve([[0, [0.1, 0, 1]], [0.84, [-0.5, 0, 1]], [TFP, [0.3, 0, 1]], [1.85, [0.6, 0, 0.6]]]), bKneePole: curve([[0, [-0.1, 0, 1]], [TC, [0.6, 0, 0.8]], [1.85, [0.8, 0, 0.4]]]),
+      grip: curve([[0, [-0.14, 0.80, 0.10]], [0.5, [-0.14, 0.80, 0.10]], [0.84, [-0.21, 0.80, 0.07]], [TFP, [-0.21, 0.79, 0.07]], [1.01, [-0.19, 0.76, 0.09]],
+        [1.08, F.cast ? [-0.02, 0.70, 0.30] : [-0.07, 0.69, 0.16]], [TC, [0.08, 0.63, 0.20]], [1.23, [0.22, 0.65, 0.12]], [1.4, [0.10, 0.84, -0.12]], [1.85, [0.0, 0.88, -0.16]]]),
+      batAz: curve([[0, 197], [0.5, 197], [0.84, 205], [TFP, 210], [1.02, 206], [1.08, 160], [TC, 92], [1.23, 15], [1.4, -95], [1.85, -140]]),
+      batEl: curve(F.dump ? [[0, 58], [0.84, 50], [TFP, 44], [1.02, 5], [1.08, -38], [TC, -18], [1.23, -6], [1.4, 18], [1.85, 34]]
+        : [[0, 58], [0.84, 50], [TFP, 45], [1.02, 30], [1.08, 6], [TC, -14], [1.23, -5], [1.4, 18], [1.85, 34]]),
+      lElbowPole: curve([[0, [0.2, -1, 0.3]], [TC, [0.2, -1, 0.4]], [1.4, [0.3, -0.6, 0.6]], [1.85, [0, -1, 0.3]]]),
+      bElbowPole: curve([[0, [-0.5, -1, 0]], [TFP, [-0.4, -1, -0.1]], [TC, [0, -1, 0.1]], [1.4, [0.4, -0.5, 0.5]], [1.85, [0.3, -0.8, 0.3]]]),
+    };
   }
+  // pitching: set 0–0.6, leg lift peak 1.10, foot plant 1.55, arm cocked 1.64, release 1.69, follow-through to 2.15
+  const TL = 1.10, TFP = 1.55, TR = 1.69;
+  const stride = F.shortStride ? 0.66 : 0.84;
+  return { T: 2.2, fps: 60, pitch: true,
+    pelvis: curve([[0, [0, 0.53, 0]], [0.6, [0, 0.53, 0]], [TL, [-0.01, 0.53, 0]], [1.35, [0.20, 0.46, 0]], [TFP, [0.44, 0.39, 0]], [TR, [0.56, 0.43, -0.02]], [1.9, [0.62, 0.42, -0.05]], [2.2, [0.64, 0.46, -0.06]]]),
+    pelvisRot: curve([[0, 0], [0.6, 0], [TL, -18], [1.4, -8], [TFP, F.earlyHips ? 55 : 32], [1.61, 70], [TR, 90], [1.9, 112], [2.2, 118]]),
+    torsoRot: curve(F.earlyHips ? [[0, 0], [0.6, 0], [TL, -20], [1.4, -10], [TFP, 30], [1.6, 70], [TR, 100], [1.9, 140], [2.2, 150]]
+      : [[0, 0], [0.6, 0], [TL, -22], [1.4, -22], [TFP, -16], [1.6, 30], [1.65, 70], [TR, 100], [1.9, 140], [2.2, 150]]),
+    tiltBack: curve([[0, 0], [TL, 2], [TFP, 4], [1.62, -10], [TR, F.upright ? -10 : -38], [1.9, -50], [2.2, -42]]),
+    tiltZ: curve([[0, 0], [TFP, 4], [TR, 8], [2.2, 10]]),
+    shTilt: curve([[0, 0], [TL, 0], [TFP, 6], [TR, -18], [2.2, -8]]),
+    headYaw: curve([[0, 88], [2.2, 90]]), headDown: curve([[0, 2], [TR, 8], [1.9, 20], [2.2, 14]]),
+    lAnkle: curve([[0, [0.12, 0.045, 0.0]], [0.6, [0.12, 0.045, 0.0]], [0.8, [0.08, 0.12, 0.0]], [TL, [0.16, 0.30, 0.02]], [1.35, [0.42, 0.18, 0.0]], [1.5, [stride - 0.04, 0.07, -0.01]], [TFP, [stride, 0.045, -0.01]], [2.2, [stride, 0.045, -0.01]]]),
+    bAnkle: curve([[0, [0, 0.045, 0]], [1.4, [0, 0.045, 0]], [TFP, [0.03, 0.06, 0]], [TR, [0.14, 0.12, 0.02]], [1.9, [0.48, 0.22, 0.05]], [2.2, [0.70, 0.07, 0.06]]]),
+    lKneePole: curve([[0, [0.5, 0, 0.8]], [TL, [1, 0.6, 0.2]], [TFP, [1, 0.1, 0.2]], [2.2, [1, 0, 0.2]]]), bKneePole: curve([[0, [0.6, 0, 0.8]], [TFP, [1, 0, 0.3]], [1.9, [1, 0.2, 0.2]], [2.2, [1, 0, 0.2]]]),
+    // throwing hand path (absolute world positions) and glove hand
+    bWrist: curve([[0, [0.04, 0.70, 0.13]], [0.6, [0.04, 0.70, 0.13]], [TL, [0.02, 0.73, 0.12]], [1.22, [0.06, 0.50, 0.12]], [1.38, [-0.02, 0.58, 0.04]],
+      [TFP, F.lateArm ? [0.26, 0.60, 0.0] : [0.24, 0.88, -0.02]], [1.64, [0.45, 0.86, -0.08]], [TR, [0.92, 0.88, -0.08]], [1.78, [0.98, 0.56, -0.1]], [1.95, [0.86, 0.32, -0.16]], [2.2, [0.80, 0.40, -0.16]]]),
+    lWrist: curve([[0, [0.04, 0.70, 0.13]], [0.6, [0.04, 0.70, 0.13]], [TL, [0.02, 0.73, 0.12]], [1.25, [0.26, 0.74, 0.12]], [TFP, [0.80, 0.76, 0.08]],
+      [TR, F.gloveOut ? [0.86, 0.64, -0.2] : [0.70, 0.66, 0.08]], [1.9, [0.72, 0.56, 0.02]], [2.2, [0.74, 0.62, 0.02]]]),
+    lElbowPole: curve([[0, [0, -1, 0.5]], [TFP, [0, -1, 0.4]], [TR, [0, -1, 0.2]], [2.2, [0, -1, 0.3]]]),
+    bElbowPole: curve([[0, [0, -1, 0.5]], [1.3, [-0.6, -0.8, 0]], [TFP, [-1, -0.2, -0.2]], [1.64, [-0.6, -0.1, -0.6]], [TR, [0.2, -0.4, -0.8]], [2.2, [0, -1, -0.3]]]),
+  };
+}
+function buildPro(kind, faults) {
+  const K = proKeys(kind, faults), n = Math.round(K.T*K.fps), frames = [], tips = [];
+  for (let i = 0; i < n; i++) {
+    const t = i/K.fps, p = {};
+    for (const k of Object.keys(K)) if (typeof K[k] === 'function') p[k] = K[k](t);
+    if (kind === 'hit') {
+      const az = p.batAz/DEG, el = p.batEl/DEG, B = [Math.cos(el)*Math.cos(az), Math.sin(el), Math.cos(el)*Math.sin(az)];
+      p.lWrist = v3.sub(p.grip, v3.mul(B, 0.03)); p.bWrist = v3.add(p.grip, v3.mul(B, 0.045));
+      const r = poseFrom(p); frames.push(r.f);
+      const tip = v3.add(p.grip, v3.mul(B, 0.40)); tips.push({ x: tip[0], y: -tip[1], c: 1 });
+    } else frames.push(poseFrom(p).f);
+  }
+  const seq = { frames, conf: frames.map(() => new Float32Array(NJ).fill(1)), fps: K.fps, leadLeft: true, H: 1, groundY: 0, originX: 0, fwd: 1, demo: true, pro: !faults };
+  if (kind === 'hit') { seq.batTips = tips; addBatSpeed(seq); }
   return seq;
 }
+function buildDemo(kind) { return buildPro(kind); }
+function buildFaulty(kind) { return buildPro(kind, kind === 'hit' ? { overstride: 1, headDrop: 1, earlyOpen: 1, dump: 1, cast: 1, backSlide: 1 } : { shortStride: 1, lateArm: 1, earlyHips: 1, upright: 1, gloveOut: 1 }); }
+
 function addBatSpeed(seq) {
   if (!seq.batTips) return;
   const t = seq.batTips; const ok = t.filter(b => b && b.c > 0.2).length / t.length;
@@ -954,7 +1027,7 @@ function addBatSpeed(seq) {
   seq.batOk = ok > 0.55;
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { NJ, JN, sideMap, cleanRaw, normalize, toPixel, solveBat, detectPhases, analyzeMotion, packRecord, seqFromRecord, alignIndex, lerpFrame, compareRecords, buildDemo, addBatSpeed, NA, angAt, P, mid, gauss1d, deriv, speedSeries };
+if (typeof module !== 'undefined' && module.exports) module.exports = { NJ, JN, sideMap, cleanRaw, normalize, toPixel, solveBat, detectPhases, analyzeMotion, packRecord, seqFromRecord, alignIndex, lerpFrame, compareRecords, buildDemo, buildPro, buildFaulty, addBatSpeed, NA, angAt, P, mid, gauss1d, deriv, speedSeries };
 
 </script>
 <script>
@@ -1027,9 +1100,9 @@ const baselineFor = kind => { const id = st.prefs['base_' + kind]; return st.rec
 
 /* ---------------- copy per mode ---------------- */
 const MODE = {
-  hit: { title: 'Film a swing', rec: 'Film or upload a swing', hand: 'Bats', key: 'Contact', noun: 'swing', nouns: 'swings', demoName: 'Sample swing',
+  hit: { title: 'Film a swing', rec: 'Film or upload a swing', hand: 'Bats', key: 'Contact', noun: 'swing', nouns: 'swings', demoName: 'Pro model swing',
     tips: ['Stand 15–20 ft away on the far side of the plate, facing the hitter\'s chest.', 'Hold the phone at waist height and keep it still. A fence or tripod helps.', 'Keep the whole body and the full bat in frame from load to finish.', 'Start recording 2 seconds before the swing. One swing per clip.', 'Use slo-mo if your phone has it, and pick the matching clip speed above.'] },
-  pitch: { title: 'Film a pitch', rec: 'Film or upload a pitch', hand: 'Throws', key: 'Release', noun: 'pitch', nouns: 'pitches', demoName: 'Sample delivery',
+  pitch: { title: 'Film a pitch', rec: 'Film or upload a pitch', hand: 'Throws', key: 'Release', noun: 'pitch', nouns: 'pitches', demoName: 'Pro model delivery',
     tips: ['Film from the side, square to the line between the mound and the plate, 20–30 ft away.', 'Hold the phone at chest height and keep it still.', 'Keep the whole body in frame from the set position through the follow-through.', 'Start recording before the leg lift. One pitch per clip.', 'Use slo-mo if your phone has it, and pick the matching clip speed above.'] },
 };
 
@@ -1277,6 +1350,11 @@ function drawLive(k, W, H) {
 }
 
 /* ---------------- demo + library sources ---------------- */
+const proRecs = {};
+function proRecord(kind) {
+  if (!proRecs[kind]) { const s = buildPro(kind), r = analyzeMotion(s, kind); proRecs[kind] = packRecord(s, r, { id: 'pro:' + kind, name: 'Pro model', player: 'Pro model', heightIn: 72, createdAt: 0, hand: 'R' }); }
+  return proRecs[kind];
+}
 function loadDemo() {
   pause();
   const seq = buildDemo(st.mode);
@@ -1298,7 +1376,7 @@ function afterAnalysis(quiet) {
   st.focusFix = null; st.idealFrames = r.ideal;
   computeEnergy();
   st.frame = r.phases.start; st.fpos = st.frame;
-  if (!st.compareRec) { const b = baselineFor(st.mode); if (b && b.id !== st.recId && st.source !== 'demo') st.compareRec = b; }
+  if (!st.compareRec && st.source !== 'demo') { const b = baselineFor(st.mode); st.compareRec = b && b.id !== st.recId ? b : proRecord(st.mode); }
   prepCompare();
   setStageMeta(); sizeStage(); buildScrub(); renderReport(); seekFrame(r.phases.key);
   if (!quiet) { setTab('Analyze'); toast('Analysis ready. Score ' + r.overall + '.'); }
@@ -1500,7 +1578,7 @@ function sizeStage() {
 }
 function setStageMeta() {
   $('srcName').textContent = st.name;
-  $('srcTag').textContent = st.source === 'demo' ? 'Sample data' : st.source === 'library' ? 'From library' : 'Your video';
+  $('srcTag').textContent = st.source === 'demo' ? 'Pro model' : st.source === 'library' ? 'From library' : 'Your video';
   document.querySelector('[data-layer="video"]').hidden = !st.hasVideo;
   document.querySelector('[data-layer="bat"]').hidden = st.mode !== 'hit';
   document.querySelector('[data-layer="past"]').hidden = !st.compareRec;
@@ -1552,7 +1630,7 @@ function renderReport() {
         <p class="muted small">${fixes.length ? `${fixes.length} thing${fixes.length > 1 ? 's' : ''} to work on. Biggest: <b style="color:var(--ink)">${esc(fixes[0].label.toLowerCase())}</b>.` : 'Every check is inside the target range.'}</p>
       </div>
     </div>
-    ${st.source === 'demo' ? `<p class="note" style="margin-top:12px">This is a built-in sample ${M.noun} so you can see how the report works. Record or choose a video above to analyze your own.</p>` : ''}
+    ${st.source === 'demo' ? `<p class="note" style="margin-top:12px">This is the pro model: a 3D ${kind === 'hit' ? 'swing' : 'delivery'} built from published biomechanics of pro ${kind === 'hit' ? 'hitters' : 'pitchers'}, shown from the camera angle you film from. When you analyze your own video, the pro model is laid over it in purple, lined up phase by phase.</p>` : ''}
   </div>
 
   ${cmp ? `<div class="card">
@@ -1611,7 +1689,7 @@ function renderReport() {
     <label class="check" style="margin-top:10px"><input type="checkbox" id="saveBase" ${baselineFor(kind) ? '' : 'checked'}> Make this my baseline ${M.noun}</label>
     <p class="note" style="margin-top:6px">Saves the skeleton, phases and numbers. The video stays on your phone.${store.kind === 'local' ? ' Saved on this device.' : ''}</p>`}
     <div class="opt" style="margin-top:14px"><label for="cmpSel">Compare with</label>
-      <select id="cmpSel" style="flex:1;min-width:0"><option value="">Nothing</option>${recOpts.map(x => `<option value="${esc(x.id)}" ${st.compareRec && st.compareRec.id === x.id ? 'selected' : ''}>${esc(x.name)}${st.prefs['base_' + kind] === x.id ? ' ★' : ''} · ${x.overall}</option>`).join('')}</select>
+      <select id="cmpSel" style="flex:1;min-width:0"><option value="">Nothing</option><option value="pro:${kind}" ${st.compareRec && st.compareRec.id === 'pro:' + kind ? 'selected' : ''}>Pro model</option>${recOpts.map(x => `<option value="${esc(x.id)}" ${st.compareRec && st.compareRec.id === x.id ? 'selected' : ''}>${esc(x.name)}${st.prefs['base_' + kind] === x.id ? ' ★' : ''} · ${x.overall}</option>`).join('')}</select>
     </div>
     ${!recOpts.length ? `<p class="note" style="margin-top:6px">Save a few ${M.nouns} to compare against them here.</p>` : ''}
   </div>
@@ -1785,7 +1863,7 @@ $('report').addEventListener('click', async e => {
   }
 });
 $('report').addEventListener('change', e => {
-  if (e.target.id === 'cmpSel') { st.compareRec = st.records.find(r => r.id === e.target.value) || null; prepCompare(); st.layers.past = true; document.querySelector('[data-layer="past"]').setAttribute('aria-pressed', 'true'); setStageMeta(); renderReport(); draw(); }
+  if (e.target.id === 'cmpSel') { st.compareRec = e.target.value.startsWith('pro:') ? proRecord(st.mode) : st.records.find(r => r.id === e.target.value) || null; prepCompare(); st.layers.past = true; document.querySelector('[data-layer="past"]').setAttribute('aria-pressed', 'true'); setStageMeta(); renderReport(); draw(); }
 });
 document.addEventListener('click', async e => {
   const t = e.target.closest('[data-tab]'); if (t) { setTab(t.dataset.tab); return; }
@@ -1836,18 +1914,6 @@ const SAMPLE_A = 'sample:a', SAMPLE_B = 'sample:b', CURRENT = 'current';
 const entryCache = new Map();
 const mphH = (v, h) => Number.isFinite(v) && v > 0 ? Math.round(v*h*0.0254*2.23694) + ' mph' : '—';
 
-function demoVariant(kind) {
-  const base = buildDemo(kind), r = analyzeMotion(base, kind), F = r.ideal, n = F.length, key = r.phases.key;
-  const stretch = 1.3, pre = key*stretch, total = Math.round(pre + (n - key));
-  const src = t => Math.min(n - 1, t < pre ? t/stretch : key + (t - pre));
-  const frames = []; for (let t = 0; t < total; t++) frames.push(lerpFrame(F, src(t)));
-  const seq = { frames, conf: frames.map(() => new Float32Array(17).fill(1)), fps: base.fps, leadLeft: true, H: 1, groundY: 0, originX: 0, fwd: 1, demo: true };
-  if (base.batTips) {
-    seq.batTips = frames.map((f1, t) => { const i = Math.round(src(t)), b = base.batTips[i], f0 = base.frames[i]; return { x: b.x - (f0[18] + f0[20])/2 + (f1[18] + f1[20])/2, y: b.y - (f0[19] + f0[21])/2 + (f1[19] + f1[21])/2, c: 1 }; });
-    addBatSpeed(seq);
-  }
-  return seq;
-}
 function finishEntry(e) {
   const S = sideMap(e.seq.leadLeft), r = e.res;
   e.span = [r.phases.start, r.phases.end]; e.key = r.phases.key; e.fps = e.seq.fps;
@@ -1869,8 +1935,8 @@ function buildEntry(id) {
   const ck = kind + '|' + id; if (entryCache.has(ck)) return entryCache.get(ck);
   let e = null;
   if (id === SAMPLE_A || id === SAMPLE_B) {
-    const seq = id === SAMPLE_A ? buildDemo(kind) : demoVariant(kind);
-    e = { id, kind, label: (id === SAMPLE_A ? 'Sample adult ' : 'Sample youth ') + MODE[kind].noun, player: id === SAMPLE_A ? 'Sample adult' : 'Sample youth', heightIn: id === SAMPLE_A ? 72 : 58, seq, res: analyzeMotion(seq, kind) };
+    const seq = id === SAMPLE_A ? buildPro(kind) : buildFaulty(kind);
+    e = { id, kind, label: id === SAMPLE_A ? 'Pro model' : 'Common faults', player: id === SAMPLE_A ? 'Pro model' : 'Common faults', heightIn: 72, seq, res: analyzeMotion(seq, kind) };
   } else {
     const rec = st.records.find(r => r.id === id && r.kind === kind); if (!rec) return null;
     const seq = seqFromRecord(rec);
@@ -1888,6 +1954,8 @@ function defaultPair() {
   const recs = recsFor(st.mode);
   if (recs.length >= 2) { const b = recs[0]; const a = recs.find(r => (r.player || '') !== (b.player || '')) || recs[1]; return [a.id, b.id]; }
   if (recs.length === 1 && validCmpId(CURRENT)) return [recs[0].id, CURRENT];
+  if (recs.length === 1) return [SAMPLE_A, recs[0].id];
+  if (validCmpId(CURRENT)) return [SAMPLE_A, CURRENT];
   return [SAMPLE_A, SAMPLE_B];
 }
 function cmpNames() {
@@ -2126,7 +2194,7 @@ function cmpOptions(sel) {
   for (const r of recsFor(kind)) { const g = r.player || 'No player set'; (groups[g] = groups[g] || []).push(r); }
   let html = validCmpId(CURRENT) ? `<option value="${CURRENT}">Open now: ${esc(st.name)} (not saved)</option>` : '';
   for (const [g, list] of Object.entries(groups)) html += `<optgroup label="${esc(g)}">` + list.map(r => `<option value="${esc(r.id)}">${esc(r.name)} · ${r.overall}</option>`).join('') + '</optgroup>';
-  html += `<optgroup label="Samples"><option value="${SAMPLE_A}">Sample adult ${M.noun}</option><option value="${SAMPLE_B}">Sample youth ${M.noun}</option></optgroup>`;
+  html += `<optgroup label="Models"><option value="${SAMPLE_A}">Pro model ${M.noun}</option><option value="${SAMPLE_B}">${M.noun[0].toUpperCase() + M.noun.slice(1)} with common faults</option></optgroup>`;
   return html;
 }
 function renderCompare(reset) {
@@ -2139,7 +2207,7 @@ function renderCompare(reset) {
   for (const [id, v] of [['cmpA', cmp.aId], ['cmpB', cmp.bId]]) { const s = $(id); if (document.activeElement !== s) { s.innerHTML = cmpOptions(); s.value = v; } }
   const samples = cmp.aId.startsWith('sample:') && cmp.bId.startsWith('sample:');
   const lr = A.seq.leadLeft !== B.seq.leadLeft;
-  $('cmpNote').innerHTML = samples ? `Showing two built-in samples. Save your son's ${M.noun} and yours under each player's name in Analyze, then pick them here.`
+  $('cmpNote').innerHTML = samples ? `Showing the pro model next to a ${M.noun} with common faults. Save your son's ${M.noun} and yours under each player's name in Analyze, then pick them here, or compare either one to the pro model.`
     : `Both skeletons are scaled to the same height${lr ? ', and the lefty is mirrored so both face the same way' : ''}. ${A.heightIn !== B.heightIn ? `Real size shows ${esc(nmOf(A))} at ${fmtHt(A.heightIn)} and ${esc(nmOf(B))} at ${fmtHt(B.heightIn)}.` : ''}`;
   if (changed || reset) { cmp.t = (phIdx(A, A.res.phases.list[0][0]) - A.key)/A.fps; cmp.phase = A.res.phases.keyName; computeCmpVB(); }
   $('cPhaseChips').innerHTML = `<span class="row-lbl" style="align-self:center;margin-right:4px">Phase</span>` + A.res.phases.list.map(([n]) => `<button class="chip phase" data-cph="${esc(n)}">${esc(n)}</button>`).join('');

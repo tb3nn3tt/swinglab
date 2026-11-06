@@ -4,18 +4,6 @@ const SAMPLE_A = 'sample:a', SAMPLE_B = 'sample:b', CURRENT = 'current';
 const entryCache = new Map();
 const mphH = (v, h) => Number.isFinite(v) && v > 0 ? Math.round(v*h*0.0254*2.23694) + ' mph' : '—';
 
-function demoVariant(kind) {
-  const base = buildDemo(kind), r = analyzeMotion(base, kind), F = r.ideal, n = F.length, key = r.phases.key;
-  const stretch = 1.3, pre = key*stretch, total = Math.round(pre + (n - key));
-  const src = t => Math.min(n - 1, t < pre ? t/stretch : key + (t - pre));
-  const frames = []; for (let t = 0; t < total; t++) frames.push(lerpFrame(F, src(t)));
-  const seq = { frames, conf: frames.map(() => new Float32Array(17).fill(1)), fps: base.fps, leadLeft: true, H: 1, groundY: 0, originX: 0, fwd: 1, demo: true };
-  if (base.batTips) {
-    seq.batTips = frames.map((f1, t) => { const i = Math.round(src(t)), b = base.batTips[i], f0 = base.frames[i]; return { x: b.x - (f0[18] + f0[20])/2 + (f1[18] + f1[20])/2, y: b.y - (f0[19] + f0[21])/2 + (f1[19] + f1[21])/2, c: 1 }; });
-    addBatSpeed(seq);
-  }
-  return seq;
-}
 function finishEntry(e) {
   const S = sideMap(e.seq.leadLeft), r = e.res;
   e.span = [r.phases.start, r.phases.end]; e.key = r.phases.key; e.fps = e.seq.fps;
@@ -37,8 +25,8 @@ function buildEntry(id) {
   const ck = kind + '|' + id; if (entryCache.has(ck)) return entryCache.get(ck);
   let e = null;
   if (id === SAMPLE_A || id === SAMPLE_B) {
-    const seq = id === SAMPLE_A ? buildDemo(kind) : demoVariant(kind);
-    e = { id, kind, label: (id === SAMPLE_A ? 'Sample adult ' : 'Sample youth ') + MODE[kind].noun, player: id === SAMPLE_A ? 'Sample adult' : 'Sample youth', heightIn: id === SAMPLE_A ? 72 : 58, seq, res: analyzeMotion(seq, kind) };
+    const seq = id === SAMPLE_A ? buildPro(kind) : buildFaulty(kind);
+    e = { id, kind, label: id === SAMPLE_A ? 'Pro model' : 'Common faults', player: id === SAMPLE_A ? 'Pro model' : 'Common faults', heightIn: 72, seq, res: analyzeMotion(seq, kind) };
   } else {
     const rec = st.records.find(r => r.id === id && r.kind === kind); if (!rec) return null;
     const seq = seqFromRecord(rec);
@@ -56,6 +44,8 @@ function defaultPair() {
   const recs = recsFor(st.mode);
   if (recs.length >= 2) { const b = recs[0]; const a = recs.find(r => (r.player || '') !== (b.player || '')) || recs[1]; return [a.id, b.id]; }
   if (recs.length === 1 && validCmpId(CURRENT)) return [recs[0].id, CURRENT];
+  if (recs.length === 1) return [SAMPLE_A, recs[0].id];
+  if (validCmpId(CURRENT)) return [SAMPLE_A, CURRENT];
   return [SAMPLE_A, SAMPLE_B];
 }
 function cmpNames() {
@@ -294,7 +284,7 @@ function cmpOptions(sel) {
   for (const r of recsFor(kind)) { const g = r.player || 'No player set'; (groups[g] = groups[g] || []).push(r); }
   let html = validCmpId(CURRENT) ? `<option value="${CURRENT}">Open now: ${esc(st.name)} (not saved)</option>` : '';
   for (const [g, list] of Object.entries(groups)) html += `<optgroup label="${esc(g)}">` + list.map(r => `<option value="${esc(r.id)}">${esc(r.name)} · ${r.overall}</option>`).join('') + '</optgroup>';
-  html += `<optgroup label="Samples"><option value="${SAMPLE_A}">Sample adult ${M.noun}</option><option value="${SAMPLE_B}">Sample youth ${M.noun}</option></optgroup>`;
+  html += `<optgroup label="Models"><option value="${SAMPLE_A}">Pro model ${M.noun}</option><option value="${SAMPLE_B}">${M.noun[0].toUpperCase() + M.noun.slice(1)} with common faults</option></optgroup>`;
   return html;
 }
 function renderCompare(reset) {
@@ -307,7 +297,7 @@ function renderCompare(reset) {
   for (const [id, v] of [['cmpA', cmp.aId], ['cmpB', cmp.bId]]) { const s = $(id); if (document.activeElement !== s) { s.innerHTML = cmpOptions(); s.value = v; } }
   const samples = cmp.aId.startsWith('sample:') && cmp.bId.startsWith('sample:');
   const lr = A.seq.leadLeft !== B.seq.leadLeft;
-  $('cmpNote').innerHTML = samples ? `Showing two built-in samples. Save your son's ${M.noun} and yours under each player's name in Analyze, then pick them here.`
+  $('cmpNote').innerHTML = samples ? `Showing the pro model next to a ${M.noun} with common faults. Save your son's ${M.noun} and yours under each player's name in Analyze, then pick them here, or compare either one to the pro model.`
     : `Both skeletons are scaled to the same height${lr ? ', and the lefty is mirrored so both face the same way' : ''}. ${A.heightIn !== B.heightIn ? `Real size shows ${esc(nmOf(A))} at ${fmtHt(A.heightIn)} and ${esc(nmOf(B))} at ${fmtHt(B.heightIn)}.` : ''}`;
   if (changed || reset) { cmp.t = (phIdx(A, A.res.phases.list[0][0]) - A.key)/A.fps; cmp.phase = A.res.phases.keyName; computeCmpVB(); }
   $('cPhaseChips').innerHTML = `<span class="row-lbl" style="align-self:center;margin-right:4px">Phase</span>` + A.res.phases.list.map(([n]) => `<button class="chip phase" data-cph="${esc(n)}">${esc(n)}</button>`).join('');

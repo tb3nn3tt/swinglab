@@ -1,7 +1,7 @@
 import sys, os, shutil, json
 standalone = '--standalone' in sys.argv
 s=open('src/page.html').read()
-core=open('src/core.js').read().replace("if (typeof module !== 'undefined') module.exports","if (typeof module !== 'undefined' && module.exports) module.exports")
+core=open('src/core.js').read().replace('/*PRO*/', open('src/pro.js').read()).replace("if (typeof module !== 'undefined') module.exports","if (typeof module !== 'undefined' && module.exports) module.exports")
 ui=open('src/ui.js').read().replace('/*COMPARE*/',open('src/compare.js').read()).replace('/*CAMERA*/', open('src/camera.js').read() if standalone else '')
 s=s.replace('/*CORE*/',core).replace('/*UI*/',ui)
 if not standalone:

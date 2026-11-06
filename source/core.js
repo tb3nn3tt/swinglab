@@ -432,54 +432,7 @@ function compareRecords(curMetrics, rec) {
   });
 }
 
-/* ---------- demo motions (procedural sample data) ---------- */
-function kf(o) { // o: {joint: [x,y]}; returns Float32Array frame
-  const f = new Float32Array(NJ*2);
-  const map = { nose:0, lEye:1, rEye:2, lEar:3, rEar:4, lSh:5, rSh:6, lEl:7, rEl:8, lWr:9, rWr:10, lHip:11, rHip:12, lKn:13, rKn:14, lAn:15, rAn:16 };
-  for (const [k, v] of Object.entries(o)) { f[map[k]*2] = v[0]; f[map[k]*2+1] = v[1]; }
-  if (!o.lEye) { f[2] = f[0]+0.02; f[3] = f[1]-0.02; f[4] = f[0]-0.02; f[5] = f[1]-0.02; f[6] = f[0]+0.045; f[7] = f[1]-0.01; f[8] = f[0]-0.045; f[9] = f[1]-0.01; }
-  return f;
-}
-function catmull(p0, p1, p2, p3, t) { const t2 = t*t, t3 = t2*t; return 0.5*((2*p1) + (-p0+p2)*t + (2*p0-5*p1+4*p2-p3)*t2 + (-p0+3*p1-3*p2+p3)*t3); }
-function buildDemo(kind) {
-  const fps = 30;
-  const keys = kind === 'hit' ? [
-    [0.00, { nose:[0,-0.90], lSh:[0.10,-0.80], rSh:[-0.10,-0.80], lEl:[0.0,-0.68], rEl:[-0.20,-0.70], lWr:[-0.10,-0.78], rWr:[-0.12,-0.79], lHip:[0.08,-0.50], rHip:[-0.08,-0.50], lKn:[0.12,-0.27], rKn:[-0.13,-0.27], lAn:[0.17,-0.02], rAn:[-0.17,-0.02] }],
-    [0.35, { nose:[-0.01,-0.90], lSh:[0.09,-0.80], rSh:[-0.11,-0.80], lEl:[-0.01,-0.68], rEl:[-0.21,-0.70], lWr:[-0.12,-0.78], rWr:[-0.14,-0.79], lHip:[0.07,-0.50], rHip:[-0.09,-0.50], lKn:[0.12,-0.28], rKn:[-0.14,-0.27], lAn:[0.18,-0.03], rAn:[-0.17,-0.02] }],
-    [0.55, { nose:[-0.02,-0.90], lSh:[0.06,-0.80], rSh:[-0.12,-0.80], lEl:[-0.03,-0.68], rEl:[-0.25,-0.70], lWr:[-0.16,-0.79], rWr:[-0.18,-0.80], lHip:[0.05,-0.50], rHip:[-0.10,-0.50], lKn:[0.13,-0.30], rKn:[-0.15,-0.27], lAn:[0.21,-0.07], rAn:[-0.17,-0.02] }],
-    [0.78, { nose:[0.03,-0.88], lSh:[0.10,-0.79], rSh:[-0.10,-0.80], lEl:[0.0,-0.67], rEl:[-0.22,-0.69], lWr:[-0.14,-0.78], rWr:[-0.16,-0.79], lHip:[0.12,-0.48], rHip:[-0.02,-0.49], lKn:[0.26,-0.27], rKn:[-0.10,-0.26], lAn:[0.34,-0.02], rAn:[-0.17,-0.02] }],
-    [0.86, { nose:[0.06,-0.85], lSh:[0.11,-0.77], rSh:[-0.05,-0.77], lEl:[0.06,-0.66], rEl:[-0.12,-0.64], lWr:[-0.02,-0.70], rWr:[-0.04,-0.71], lHip:[0.12,-0.48], rHip:[0.04,-0.48], lKn:[0.25,-0.26], rKn:[-0.05,-0.25], lAn:[0.34,-0.02], rAn:[-0.16,-0.02] }],
-    [0.93, { nose:[0.10,-0.82], lSh:[0.11,-0.75], rSh:[0.04,-0.73], lEl:[0.17,-0.66], rEl:[0.07,-0.62], lWr:[0.24,-0.62], rWr:[0.22,-0.63], lHip:[0.12,-0.48], rHip:[0.08,-0.47], lKn:[0.23,-0.26], rKn:[-0.01,-0.24], lAn:[0.34,-0.02], rAn:[-0.15,-0.02] }],
-    [1.03, { nose:[0.11,-0.82], lSh:[0.05,-0.77], rSh:[0.10,-0.74], lEl:[0.20,-0.71], rEl:[0.18,-0.68], lWr:[0.34,-0.72], rWr:[0.32,-0.71], lHip:[0.09,-0.48], rHip:[0.12,-0.48], lKn:[0.24,-0.26], rKn:[0.03,-0.25], lAn:[0.34,-0.02], rAn:[-0.13,-0.03] }],
-    [1.45, { nose:[0.09,-0.86], lSh:[-0.02,-0.79], rSh:[0.13,-0.77], lEl:[0.02,-0.86], rEl:[0.12,-0.87], lWr:[-0.06,-0.95], rWr:[-0.08,-0.93], lHip:[0.04,-0.50], rHip:[0.14,-0.50], lKn:[0.25,-0.27], rKn:[0.08,-0.27], lAn:[0.34,-0.02], rAn:[-0.08,-0.05] }],
-  ] : [
-    [0.00, { nose:[0.05,-0.90], lSh:[0.03,-0.80], rSh:[-0.01,-0.80], lEl:[0.0,-0.66], rEl:[0.02,-0.65], lWr:[0.07,-0.68], rWr:[0.07,-0.67], lHip:[0.02,-0.50], rHip:[0.0,-0.50], lKn:[0.07,-0.26], rKn:[-0.06,-0.26], lAn:[0.10,-0.02], rAn:[-0.08,-0.02] }],
-    [0.60, { nose:[0.0,-0.92], lSh:[-0.01,-0.82], rSh:[-0.04,-0.82], lEl:[-0.03,-0.68], rEl:[-0.02,-0.67], lWr:[0.03,-0.70], rWr:[0.03,-0.69], lHip:[-0.01,-0.52], rHip:[-0.03,-0.52], lKn:[0.07,-0.50], rKn:[-0.06,-0.27], lAn:[0.02,-0.30], rAn:[-0.08,-0.02] }],
-    [0.92, { nose:[0.17,-0.86], lSh:[0.15,-0.78], rSh:[0.11,-0.78], lEl:[0.30,-0.74], rEl:[0.04,-0.62], lWr:[0.40,-0.75], rWr:[-0.04,-0.56], lHip:[0.16,-0.47], rHip:[0.13,-0.47], lKn:[0.35,-0.36], rKn:[0.01,-0.25], lAn:[0.45,-0.12], rAn:[-0.08,-0.02] }],
-    [1.05, { nose:[0.29,-0.85], lSh:[0.30,-0.75], rSh:[0.19,-0.75], lEl:[0.42,-0.74], rEl:[0.10,-0.69], lWr:[0.50,-0.72], rWr:[0.06,-0.66], lHip:[0.30,-0.44], rHip:[0.24,-0.44], lKn:[0.52,-0.25], rKn:[0.12,-0.20], lAn:[0.64,-0.02], rAn:[-0.06,-0.04] }],
-    [1.13, { nose:[0.40,-0.82], lSh:[0.42,-0.72], rSh:[0.30,-0.73], lEl:[0.46,-0.68], rEl:[0.22,-0.74], lWr:[0.48,-0.62], rWr:[0.16,-0.85], lHip:[0.38,-0.44], rHip:[0.33,-0.44], lKn:[0.53,-0.24], rKn:[0.20,-0.18], lAn:[0.64,-0.02], rAn:[-0.03,-0.05] }],
-    [1.19, { nose:[0.53,-0.78], lSh:[0.50,-0.68], rSh:[0.44,-0.71], lEl:[0.50,-0.58], rEl:[0.52,-0.78], lWr:[0.60,-0.54], rWr:[0.64,-0.83], lHip:[0.42,-0.43], rHip:[0.39,-0.43], lKn:[0.56,-0.23], rKn:[0.26,-0.17], lAn:[0.64,-0.02], rAn:[0.02,-0.06] }],
-    [1.55, { nose:[0.70,-0.62], lSh:[0.63,-0.60], rSh:[0.60,-0.66], lEl:[0.56,-0.52], rEl:[0.70,-0.48], lWr:[0.50,-0.52], rWr:[0.60,-0.33], lHip:[0.50,-0.45], rHip:[0.48,-0.45], lKn:[0.60,-0.24], rKn:[0.46,-0.30], lAn:[0.64,-0.02], rAn:[0.40,-0.18] }],
-  ];
-  const T = keys[keys.length-1][0] + 0.25, n = Math.round(T*fps);
-  const kfr = keys.map(([t, o]) => [t, kf(o)]);
-  const frames = [];
-  for (let i = 0; i < n; i++) {
-    const t = Math.min(i/fps, keys[keys.length-1][0]);
-    let k = 0; while (k < kfr.length-2 && t > kfr[k+1][0]) k++;
-    const [t1, f1] = kfr[k], [t2, f2] = kfr[k+1]; const f0 = kfr[Math.max(0, k-1)][1], f3 = kfr[Math.min(kfr.length-1, k+2)][1];
-    const u = clamp((t - t1)/(t2 - t1), 0, 1);
-    const o = new Float32Array(NJ*2); for (let q = 0; q < o.length; q++) o[q] = catmull(f0[q], f1[q], f2[q], f3[q], u);
-    frames.push(o);
-  }
-  const seq = { frames, conf: frames.map(() => new Float32Array(NJ).fill(1)), fps, leadLeft: true, H: 1, groundY: 0, originX: 0, fwd: 1, demo: true };
-  if (kind === 'hit') {
-    const bk = [[0, -105, 0.42], [0.55, -122, 0.42], [0.78, -135, 0.40], [0.86, -165, 0.36], [0.93, 18, 0.22], [1.03, 30, 0.36], [1.45, 200, 0.38]];
-    seq.batTips = frames.map((f, i) => { const t = i/fps; let k = 0; while (k < bk.length-2 && t > bk[k+1][0]) k++; const [a1, d1, l1] = bk[k], [a2, d2, l2] = bk[k+1]; let dd = ((d2 - d1 + 540) % 360) - 180; if (k === 5) dd = d2 - d1 - 360; const u = sm01(clamp((t - a1)/(a2 - a1), 0, 1)); const ang = (d1 + dd*u)/DEG, L = l1 + (l2 - l1)*u; const h = mid(f, 9, 10); return { x: h[0] + Math.cos(ang)*L, y: h[1] + Math.sin(ang)*L, c: 1 }; });
-    addBatSpeed(seq);
-  }
-  return seq;
-}
+/*PRO*/
 function addBatSpeed(seq) {
   if (!seq.batTips) return;
   const t = seq.batTips; const ok = t.filter(b => b && b.c > 0.2).length / t.length;
@@ -491,4 +444,4 @@ function addBatSpeed(seq) {
   seq.batOk = ok > 0.55;
 }
 
-if (typeof module !== 'undefined') module.exports = { NJ, JN, sideMap, cleanRaw, normalize, toPixel, solveBat, detectPhases, analyzeMotion, packRecord, seqFromRecord, alignIndex, lerpFrame, compareRecords, buildDemo, addBatSpeed, NA, angAt, P, mid, gauss1d, deriv, speedSeries };
+if (typeof module !== 'undefined') module.exports = { NJ, JN, sideMap, cleanRaw, normalize, toPixel, solveBat, detectPhases, analyzeMotion, packRecord, seqFromRecord, alignIndex, lerpFrame, compareRecords, buildDemo, buildPro, buildFaulty, addBatSpeed, NA, angAt, P, mid, gauss1d, deriv, speedSeries };

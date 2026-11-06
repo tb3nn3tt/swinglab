@@ -67,9 +67,9 @@ const baselineFor = kind => { const id = st.prefs['base_' + kind]; return st.rec
 
 /* ---------------- copy per mode ---------------- */
 const MODE = {
-  hit: { title: 'Film a swing', rec: 'Film or upload a swing', hand: 'Bats', key: 'Contact', noun: 'swing', nouns: 'swings', demoName: 'Sample swing',
+  hit: { title: 'Film a swing', rec: 'Film or upload a swing', hand: 'Bats', key: 'Contact', noun: 'swing', nouns: 'swings', demoName: 'Pro model swing',
     tips: ['Stand 15–20 ft away on the far side of the plate, facing the hitter\'s chest.', 'Hold the phone at waist height and keep it still. A fence or tripod helps.', 'Keep the whole body and the full bat in frame from load to finish.', 'Start recording 2 seconds before the swing. One swing per clip.', 'Use slo-mo if your phone has it, and pick the matching clip speed above.'] },
-  pitch: { title: 'Film a pitch', rec: 'Film or upload a pitch', hand: 'Throws', key: 'Release', noun: 'pitch', nouns: 'pitches', demoName: 'Sample delivery',
+  pitch: { title: 'Film a pitch', rec: 'Film or upload a pitch', hand: 'Throws', key: 'Release', noun: 'pitch', nouns: 'pitches', demoName: 'Pro model delivery',
     tips: ['Film from the side, square to the line between the mound and the plate, 20–30 ft away.', 'Hold the phone at chest height and keep it still.', 'Keep the whole body in frame from the set position through the follow-through.', 'Start recording before the leg lift. One pitch per clip.', 'Use slo-mo if your phone has it, and pick the matching clip speed above.'] },
 };
 
@@ -317,6 +317,11 @@ function drawLive(k, W, H) {
 }
 
 /* ---------------- demo + library sources ---------------- */
+const proRecs = {};
+function proRecord(kind) {
+  if (!proRecs[kind]) { const s = buildPro(kind), r = analyzeMotion(s, kind); proRecs[kind] = packRecord(s, r, { id: 'pro:' + kind, name: 'Pro model', player: 'Pro model', heightIn: 72, createdAt: 0, hand: 'R' }); }
+  return proRecs[kind];
+}
 function loadDemo() {
   pause();
   const seq = buildDemo(st.mode);
@@ -338,7 +343,7 @@ function afterAnalysis(quiet) {
   st.focusFix = null; st.idealFrames = r.ideal;
   computeEnergy();
   st.frame = r.phases.start; st.fpos = st.frame;
-  if (!st.compareRec) { const b = baselineFor(st.mode); if (b && b.id !== st.recId && st.source !== 'demo') st.compareRec = b; }
+  if (!st.compareRec && st.source !== 'demo') { const b = baselineFor(st.mode); st.compareRec = b && b.id !== st.recId ? b : proRecord(st.mode); }
   prepCompare();
   setStageMeta(); sizeStage(); buildScrub(); renderReport(); seekFrame(r.phases.key);
   if (!quiet) { setTab('Analyze'); toast('Analysis ready. Score ' + r.overall + '.'); }
@@ -540,7 +545,7 @@ function sizeStage() {
 }
 function setStageMeta() {
   $('srcName').textContent = st.name;
-  $('srcTag').textContent = st.source === 'demo' ? 'Sample data' : st.source === 'library' ? 'From library' : 'Your video';
+  $('srcTag').textContent = st.source === 'demo' ? 'Pro model' : st.source === 'library' ? 'From library' : 'Your video';
   document.querySelector('[data-layer="video"]').hidden = !st.hasVideo;
   document.querySelector('[data-layer="bat"]').hidden = st.mode !== 'hit';
   document.querySelector('[data-layer="past"]').hidden = !st.compareRec;
@@ -592,7 +597,7 @@ function renderReport() {
         <p class="muted small">${fixes.length ? `${fixes.length} thing${fixes.length > 1 ? 's' : ''} to work on. Biggest: <b style="color:var(--ink)">${esc(fixes[0].label.toLowerCase())}</b>.` : 'Every check is inside the target range.'}</p>
       </div>
     </div>
-    ${st.source === 'demo' ? `<p class="note" style="margin-top:12px">This is a built-in sample ${M.noun} so you can see how the report works. Record or choose a video above to analyze your own.</p>` : ''}
+    ${st.source === 'demo' ? `<p class="note" style="margin-top:12px">This is the pro model: a 3D ${kind === 'hit' ? 'swing' : 'delivery'} built from published biomechanics of pro ${kind === 'hit' ? 'hitters' : 'pitchers'}, shown from the camera angle you film from. When you analyze your own video, the pro model is laid over it in purple, lined up phase by phase.</p>` : ''}
   </div>
 
   ${cmp ? `<div class="card">
@@ -651,7 +656,7 @@ function renderReport() {
     <label class="check" style="margin-top:10px"><input type="checkbox" id="saveBase" ${baselineFor(kind) ? '' : 'checked'}> Make this my baseline ${M.noun}</label>
     <p class="note" style="margin-top:6px">Saves the skeleton, phases and numbers. The video stays on your phone.${store.kind === 'local' ? ' Saved on this device.' : ''}</p>`}
     <div class="opt" style="margin-top:14px"><label for="cmpSel">Compare with</label>
-      <select id="cmpSel" style="flex:1;min-width:0"><option value="">Nothing</option>${recOpts.map(x => `<option value="${esc(x.id)}" ${st.compareRec && st.compareRec.id === x.id ? 'selected' : ''}>${esc(x.name)}${st.prefs['base_' + kind] === x.id ? ' ★' : ''} · ${x.overall}</option>`).join('')}</select>
+      <select id="cmpSel" style="flex:1;min-width:0"><option value="">Nothing</option><option value="pro:${kind}" ${st.compareRec && st.compareRec.id === 'pro:' + kind ? 'selected' : ''}>Pro model</option>${recOpts.map(x => `<option value="${esc(x.id)}" ${st.compareRec && st.compareRec.id === x.id ? 'selected' : ''}>${esc(x.name)}${st.prefs['base_' + kind] === x.id ? ' ★' : ''} · ${x.overall}</option>`).join('')}</select>
     </div>
     ${!recOpts.length ? `<p class="note" style="margin-top:6px">Save a few ${M.nouns} to compare against them here.</p>` : ''}
   </div>
@@ -825,7 +830,7 @@ $('report').addEventListener('click', async e => {
   }
 });
 $('report').addEventListener('change', e => {
-  if (e.target.id === 'cmpSel') { st.compareRec = st.records.find(r => r.id === e.target.value) || null; prepCompare(); st.layers.past = true; document.querySelector('[data-layer="past"]').setAttribute('aria-pressed', 'true'); setStageMeta(); renderReport(); draw(); }
+  if (e.target.id === 'cmpSel') { st.compareRec = e.target.value.startsWith('pro:') ? proRecord(st.mode) : st.records.find(r => r.id === e.target.value) || null; prepCompare(); st.layers.past = true; document.querySelector('[data-layer="past"]').setAttribute('aria-pressed', 'true'); setStageMeta(); renderReport(); draw(); }
 });
 document.addEventListener('click', async e => {
   const t = e.target.closest('[data-tab]'); if (t) { setTab(t.dataset.tab); return; }
