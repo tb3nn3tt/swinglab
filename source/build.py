@@ -30,6 +30,7 @@ s = s.replace('<title>SwingLab</title>\n','',1)
 d='dist'; shutil.rmtree(d, ignore_errors=True); os.makedirs(d+'/models'); os.makedirs(d+'/icons')
 open(d+'/index.html','w').write(head + s + '\n</body>\n</html>\n')
 for f in ['model.json','movenet-lightning-weights.wasm']: shutil.copy('models/'+f, d+'/models/'+f)
+for sub in ['thunder','yolo']: shutil.copytree('models/'+sub, d+'/models/'+sub)
 for f in os.listdir('icons'): shutil.copy('icons/'+f, d+'/icons/'+f)
 json.dump({"name":"SwingLab","short_name":"SwingLab","description":"Swing and pitching motion coach","start_url":"./","scope":"./","display":"standalone","orientation":"portrait","background_color":"#0B121B","theme_color":"#0B121B",
   "icons":[{"src":"icons/icon-192.png","sizes":"192x192","type":"image/png"},{"src":"icons/icon-512.png","sizes":"512x512","type":"image/png"},{"src":"icons/icon-512-maskable.png","sizes":"512x512","type":"image/png","purpose":"maskable"}]}, open(d+'/manifest.webmanifest','w'), indent=1)

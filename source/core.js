@@ -48,10 +48,22 @@ function cleanRaw(raw, sigma = 1.0) {
       if (swap < keep*0.6) for (const [a,b] of g) for (let c = 0; c < 3; c++) { const t = cur[a*3+c]; cur[a*3+c] = cur[b*3+c]; cur[b*3+c] = t; }
     }
   }
+  // 1b) reject one-frame misdetections: a joint far from the median of its neighbors is dropped
+  const Hest = percentile(out.map(f => Math.max(f[15*3+1], f[16*3+1]) - f[1]), 0.8) || 100;
+  const bad = out.map(() => new Uint8Array(NJ));
+  for (let j = 0; j < NJ; j++) for (let i = 0; i < n; i++) {
+    const xs = [], ys = [];
+    for (let d = -2; d <= 2; d++) { const ii = i + d; if (!d || ii < 0 || ii >= n || out[ii][j*3+2] < 0.2) continue; xs.push(out[ii][j*3]); ys.push(out[ii][j*3+1]); }
+    if (xs.length < 2) continue;
+    xs.sort((a, b) => a - b); ys.sort((a, b) => a - b);
+    const mx = xs[xs.length >> 1], my = ys[ys.length >> 1];
+    if (Math.hypot(out[i][j*3] - mx, out[i][j*3+1] - my) > 0.15*Hest) bad[i][j] = 1;
+  }
+  out.forEach((f, i) => { for (let j = 0; j < NJ; j++) if (bad[i][j]) f[j*3+2] = 0; });
   // 2) interpolate low-confidence joints, 3) smooth
   for (let j = 0; j < NJ; j++) {
     for (const c of [0,1]) {
-      let s = out.map(f => f[j*3+2] >= 0.15 ? f[j*3+c] : NaN);
+      let s = out.map(f => f[j*3+2] >= 0.2 ? f[j*3+c] : NaN);
       const good = s.map((v,i)=>Number.isFinite(v)?i:-1).filter(i=>i>=0);
       if (!good.length) continue;
       s = s.map((v, i) => {
@@ -88,9 +100,9 @@ function toPixel(seq, x, y) { return [seq.originX + x*seq.fwd*seq.H, seq.groundY
 
 /* ---------- bat path from per-frame ray scores (dynamic programming) ---------- */
 const NA = 72;
-function solveBat(scores, handsNorm, slow, H) {
-  // scores: array of Float32Array(NA) or null. returns tips in normalized coords + confidence
-  const n = scores.length, maxStep = Math.round(Math.min(30, 16/Math.max(1, slow*0.5))); // in 5-degree steps
+function solveBat(scores, allow) {
+  // scores: array of Float32Array(NA) or null; allow: per-frame max turn in 5-degree steps (from hand speed)
+  const n = scores.length, maxStep = 18;
   const norm = scores.map(s => { if (!s) return null; const m = percentile(Array.from(s), 0.5), mx = Math.max(...s); const den = (mx-m) || 1; return { v: Array.from(s, x => (x-m)/den), conf: clamp((mx-m)/(m+8), 0, 1) }; });
   const cost = [], back = [];
   for (let i = 0; i < n; i++) {
@@ -99,7 +111,8 @@ function solveBat(scores, handsNorm, slow, H) {
       const u = norm[i] ? -norm[i].v[a]*norm[i].conf : 0;
       if (i === 0) { cost[i][a] = u; continue; }
       let best = Infinity, bi = 0;
-      for (let d = -maxStep; d <= maxStep; d++) { const p = (a+d+NA)%NA; const c = cost[i-1][p] + 0.35*(d/maxStep)**2; if (c < best) { best = c; bi = p; } }
+      const al = allow ? Math.max(2, Math.min(maxStep, allow[i])) : 8, lim = Math.min(maxStep, Math.ceil(al*1.6));
+      for (let d = -lim; d <= lim; d++) { const p = (a+d+NA)%NA; const c = cost[i-1][p] + 0.5*(d/al)**2; if (c < best) { best = c; bi = p; } }
       cost[i][a] = best + u; back[i][a] = bi;
     }
   }
@@ -216,7 +229,7 @@ function analyzeMotion(seq, kind) {
   if (kind === 'hit') {
     const ST = g('Stance'), L = g('Load'), FP = g('Foot plant'), LA = g('Launch'), C = g('Contact'), FI = g('Finish');
     const stride = at(FP)[S.lAn*2] - at(ST)[S.lAn*2];
-    add({ key: 'stride', label: 'Stride length', value: stride*100, unit: '% ht', lo: 6, hi: 28, tol: 10, weight: 1, phase: 'Foot plant',
+    add({ key: 'stride', label: 'Stride length (overstriding)', value: stride*100, unit: '% ht', lo: 6, hi: 28, tol: 10, weight: 1, phase: 'Foot plant',
       low: 'Little forward move. Without a stride you lose momentum into the ball.', high: 'Overstriding. A long stride drops your eyes and makes you late.',
       drillLow: 'Step-and-hold drill: stride to a target 4 inches ahead, freeze, then swing.', drillHigh: 'Put a bat on the ground as a stride marker and land before it.',
       fix: (f, i) => { const tgt = clamp(stride*100, 6, 28)/100; const dx = tgt - stride; const w = bump(i, g('Load'), FP, n, n+1); shiftJ(f, [S.lAn], dx, 0, w); shiftJ(f, [S.lKn], dx, 0, w*0.7); shiftJ(f, [S.lHip], dx, 0, w*0.25); } });
@@ -264,6 +277,55 @@ function analyzeMotion(seq, kind) {
       low: 'Falling back at the finish.', high: 'Falling forward past the front foot at the finish.',
       drillLow: 'Hold your finish for 2 seconds after every tee swing.', drillHigh: 'Hold your finish for 2 seconds after every tee swing.',
       fix: (f, i) => { const tgt = clamp(bal, -60, 70); const half = Math.max(0.05, Math.abs(a1-a2)/2); const dx = (tgt - bal)/100*half; const w = bump(i, C, FI - sec(0.15), n, n+1); shiftJ(f, [...HEAD, 5,6,7,8,9,10,11,12], dx, 0, w); } });
+
+    /* ---- head: level, not dropping, eyes staying on the ball ---- */
+    const drop = (nC[1] - nL[1])*100; // + = head went down
+    add({ key: 'headDrop', label: 'Head height, load to contact', value: drop, unit: '% ht', lo: -3, hi: 4, tol: 4, weight: 1.2, phase: 'Contact',
+      high: `Head drops ${drop.toFixed(0)}% of your height into contact. Dropping the head changes your eye level, so the ball looks like it moved.`, low: 'Head pops up into contact. Standing up pulls the barrel over the ball.',
+      drillHigh: 'Stride-and-hold drill against a wall: the top of your cap should not slide down the wall when you stride and turn.', drillLow: 'Stay in your legs through the turn. Feel the back knee drive forward, not up.',
+      fix: (f, i) => { const w = bump(i, L, Math.round((L+C)/2), FI, n+1); const dy = (nL[1] - P(f, 0)[1]); if (Math.abs(dy) < 0.02) return; const k = (Math.abs(dy) - 0.02)/Math.abs(dy); shiftJ(f, HEAD, 0, dy*k, w); shiftJ(f, [5,6], 0, dy*k, w*0.7); shiftJ(f, [7,8,9,10], 0, dy*k, w*0.5); } });
+    const eyeTilt = f => { const a = P(f, 1), b = P(f, 2); return Math.atan2(b[1]-a[1], Math.abs(b[0]-a[0]) + 1e-4)*DEG; };
+    const eyeOk = i => seq.conf ? Math.min(seq.conf[i][1], seq.conf[i][2]) > 0.25 : true;
+    const tiltChange = eyeOk(L) && eyeOk(C) ? Math.abs(eyeTilt(at(C)) - eyeTilt(at(L))) : NaN;
+    add({ key: 'eyes', label: 'Eyes level (tilt change, load to contact)', value: tiltChange, unit: '°', lo: 0, hi: 18, tol: 10, weight: 0.8, phase: 'Contact',
+      high: 'Your eye line tilts a lot during the swing. Tilting the head changes how you see the pitch.', drillHigh: 'Soft-toss focusing on keeping both eyes level, like reading a line of text, until contact.', fix: null });
+    const yaw = f => { const em = mid(f, 3, 4), ew = Math.max(0.02, Math.abs(f[6] - f[8])); return (f[0] - em[0])/ew; };
+    const earOk = i => seq.conf ? Math.min(seq.conf[i][3], seq.conf[i][4]) > 0.2 : true;
+    const headTurn = earOk(FP) && earOk(C) ? Math.abs(yaw(at(C)) - yaw(at(FP)))*100 : NaN;
+    add({ key: 'headTurn', label: 'Head stays on the ball (turn, plant to contact)', value: headTurn, unit: '%', lo: 0, hi: 35, tol: 25, weight: 0.9, phase: 'Contact',
+      high: 'Your head turns away before contact. When the head pulls off, the eyes leave the ball and the front shoulder follows.', drillHigh: 'Tee drill: after contact keep looking at the spot where the ball was for one full second.', fix: null });
+
+    /* ---- barrel and hands ---- */
+    const midL = Math.round(LA + (C - LA)*0.5);
+    const tips = seq.batTips;
+    const batAng = i => { const t = tips && tips[i]; if (!t || t.c < 0.2) return NaN; const h = mid(at(i), 9, 10); return Math.atan2(t.y - h[1], Math.abs(t.x - h[0]) + 1e-4)*DEG; }; // + = barrel below the hands
+    let dump = NaN; if (tips && seq.batOk) { const v = []; for (let i = LA; i <= midL; i++) { const a = batAng(i); if (Number.isFinite(a)) v.push(a); } if (v.length) dump = Math.max(...v); }
+    add({ key: 'dump', label: 'Barrel above the hands early in the swing', value: dump, unit: '°', lo: -90, hi: 15, tol: 15, weight: 1.2, phase: 'Launch',
+      high: `The barrel drops ${Math.round(dump)}° below your hands in the first half of the swing. That's dumping the barrel: it gets long and under the ball, causing pop-ups and swing-and-miss up in the zone.`,
+      drillHigh: 'High-tee drill: set the tee at the top of the zone and hit line drives. Keep the knob pointed at the ball and the barrel above the hands until they pass the back hip.', fix: null });
+    const handsOut = i => dist(mid(at(i), 9, 10), P(at(i), S.bSh));
+    const cast = (handsOut(midL) - handsOut(LA))*100;
+    add({ key: 'cast', label: 'Hands stay close (casting)', value: cast, unit: '% ht', lo: -10, hi: 7, tol: 5, weight: 1, phase: 'Launch',
+      high: 'Hands drift away from the body early. That is casting: a long, slow swing that loses the inside pitch.', drillHigh: 'Fence drill: stand a bat-length from a fence and swing without touching it. Lead with the knob, keep the back elbow tight.', fix: (f, i) => { const w = bump(i, LA, midL, midL, C); const sh = P(f, S.bSh), h = mid(f, 9, 10); const tgt = clamp(cast, -10, 6)/100; const k = (handsOut(midL) - handsOut(LA) - tgt)/Math.max(0.05, dist(h, sh)); if (k <= 0) return; shiftJ(f, [9, 10], (sh[0]-h[0])*k, (sh[1]-h[1])*k, w); shiftJ(f, [7, 8], (sh[0]-h[0])*k*0.5, (sh[1]-h[1])*k*0.5, w); } });
+
+    /* ---- rotation: not opening early, not over-rotating ---- */
+    const torsoFP = kin.torsoAngle[FP], torsoC = kin.torsoAngle[C];
+    add({ key: 'earlyOpen', label: 'Shoulders closed at foot plant', value: torsoFP, unit: '°', lo: 0, hi: 30, tol: 15, weight: 1, phase: 'Foot plant',
+      high: 'Your shoulders are already turning when the front foot lands. Opening early drags the barrel and takes away the outside pitch.', drillHigh: 'Stride drill: land with your front shoulder pointed at the pitcher and hold for a beat before you swing.', fix: null });
+    add({ key: 'overRot', label: 'Shoulder turn at contact', value: torsoC, unit: '°', lo: 55, hi: 120, tol: 20, weight: 0.9, phase: 'Contact',
+      high: 'Over-rotating: the shoulders spin well past square at contact, so the front side pulls off the ball.', low: 'Shoulders barely turn by contact. You are swinging with the arms instead of the body.',
+      drillHigh: 'Opposite-field tee work: put the tee deep and hit the ball the other way.', drillLow: 'Hip-turn drill: bat behind the back, turn the belly button and chest to the pitcher.', fix: null });
+
+    /* ---- feet: quiet back foot, planted front foot ---- */
+    const backSlide = (at(C)[S.bAn*2] - at(ST)[S.bAn*2])*100;
+    add({ key: 'backFoot', label: 'Back foot stays put', value: backSlide, unit: '% ht', lo: -4, hi: 7, tol: 4, weight: 0.7, phase: 'Contact',
+      high: 'Back foot slides toward the pitcher. That leaks power forward instead of rotating it.', low: 'Back foot steps back toward the catcher.',
+      drillHigh: 'Squish-the-bug drill: pivot on the ball of the back foot, it can turn but should not travel.', drillLow: 'Keep the back foot under you; turn on it, do not step off it.',
+      fix: (f, i) => { const dx = (clamp(backSlide, -4, 7) - backSlide)/100; const w = bump(i, ST, Math.round((FP + C)/2), n, n+1); shiftJ(f, [S.bAn], dx, 0, w); shiftJ(f, [S.bKn], dx*0.6, 0, w); } });
+    const frontMove = (dist(P(at(C), S.lAn), P(at(FP), S.lAn)))*100;
+    add({ key: 'frontFoot', label: 'Front foot planted after landing', value: frontMove, unit: '% ht', lo: 0, hi: 5, tol: 4, weight: 0.7, phase: 'Contact',
+      high: 'Front foot keeps moving after it lands. A front foot that slides or spins out cannot brace the swing.', drillHigh: 'Land and grip: after the stride, push the front heel and big toe into the ground and hold it there through contact.',
+      fix: (f, i) => { if (i <= FP) return; const a = P(at(FP), S.lAn), b = P(f, S.lAn); const w = bump(i, FP, FP + 2, n, n+1); shiftJ(f, [S.lAn], a[0]-b[0], a[1]-b[1], w); shiftJ(f, [S.lKn], (a[0]-b[0])*0.6, (a[1]-b[1])*0.6, w); } });
     // informational
     const hs = speedSeries(F, fps, f => mid(f, 9, 10));
     seq.info = { handSpeed: Math.max(...hs.slice(LA, C+2)), batSpeed: seq.batSpeed && seq.batOk ? Math.max(...seq.batSpeed.slice(Math.max(0, C-3), C+3)) : null };
@@ -362,7 +424,7 @@ function alignIndex(curPhases, recPhases, i, recLen) {
   const last = pts[pts.length-1]; return clamp(last[1] + (i - last[0]), 0, recLen-1);
 }
 function lerpFrame(frames, fi) { const a = Math.floor(fi), b = Math.min(frames.length-1, a+1), t = fi - a; const fa = frames[a], fb = frames[b]; const o = new Float32Array(NJ*2); for (let k = 0; k < o.length; k++) o[k] = fa[k] + (fb[k]-fa[k])*t; return o; }
-const DELTA_TOL = { stride: 5, head: 3, load: 3, leadKnee: 10, backKnee: 12, tilt: 7, drift: 5, ttc: 35, seq: 20, balance: 35, lift: 5, kneeFP: 10, block: 10, elbow: 4, armTiming: 5, trunk: 7, glove: 6, release: 6 };
+const DELTA_TOL = { stride: 5, head: 3, load: 3, leadKnee: 10, backKnee: 12, tilt: 7, drift: 5, ttc: 35, seq: 20, balance: 35, lift: 5, kneeFP: 10, block: 10, elbow: 4, armTiming: 5, trunk: 7, glove: 6, release: 6, headDrop: 3, eyes: 8, headTurn: 18, dump: 12, cast: 4, earlyOpen: 12, overRot: 18, backFoot: 4, frontFoot: 3 };
 function compareRecords(curMetrics, rec) {
   return curMetrics.filter(m => Number.isFinite(m.value) && rec.metrics[m.key] != null).map(m => {
     const d = m.value - rec.metrics[m.key]; const tol = DELTA_TOL[m.key] || m.tol/2;

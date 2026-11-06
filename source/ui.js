@@ -73,69 +73,148 @@ const MODE = {
     tips: ['Film from the side, square to the line between the mound and the plate, 20–30 ft away.', 'Hold the phone at chest height and keep it still.', 'Keep the whole body in frame from the set position through the follow-through.', 'Start recording before the leg lift. One pitch per clip.', 'Use slo-mo if your phone has it, and pick the matching clip speed above.'] },
 };
 
-/* ---------------- model ---------------- */
-let model = null, modelP = null;
-async function ensureModel(onMsg) {
-  if (model) return model;
-  if (!modelP) modelP = (async () => {
-    if (!window.tf) throw new Error('The tracking library did not load. Check your connection and reload.');
-    onMsg && onMsg('Starting the tracker…');
-    try { await tf.setBackend('webgl'); } catch { await tf.setBackend('cpu'); }
-    await tf.ready();
-    const m = await tf.loadGraphModel('models/model.json');
-    tf.tidy(() => m.execute(tf.zeros([1, 192, 192, 3], 'int32')));
+/* ---------------- models ---------------- */
+// fast pose model for the live camera, precise pose model for analysis, object detector to lock onto the player and find the bat
+const NETS = { fast: { url: 'models/model.json', size: 192 }, precise: { url: 'models/thunder/model.json', size: 256 }, det: { url: 'models/yolo/model.json', size: 320, out: 'model/tf_detect/concat_3' } };
+const nets = {}, netP = {};
+let tfP = null;
+function tfReady() {
+  if (!window.tf) return Promise.reject(new Error('The tracking library did not load. Check your connection and reload.'));
+  if (!tfP) tfP = (async () => { try { await tf.setBackend('webgl'); } catch { await tf.setBackend('cpu'); } await tf.ready(); })();
+  return tfP;
+}
+async function loadNet(key) {
+  if (nets[key]) return nets[key];
+  if (!netP[key]) netP[key] = (async () => {
+    await tfReady(); const spec = NETS[key]; const m = await tf.loadGraphModel(spec.url);
+    if (key === 'det') tf.tidy(() => m.execute(tf.zeros([1, 320, 320, 3]), spec.out)); else tf.tidy(() => m.execute(tf.zeros([1, spec.size, spec.size, 3], 'int32')));
     return m;
   })();
-  try { model = await modelP; } catch (e) { modelP = null; throw e; }
-  return model;
+  try { nets[key] = await netP[key]; } catch (e) { delete netP[key]; throw e; }
+  return nets[key];
 }
+let model = null; // fast pose model, used by the live camera
+async function ensureModel(onMsg) { onMsg && onMsg('Starting the tracker…'); model = await loadNet('fast'); return model; }
+async function ensurePrecise(onMsg) { onMsg && onMsg('Loading the precise tracker…'); try { return await loadNet('precise'); } catch { return ensureModel(); } }
+async function ensureDetector() { try { return await loadNet('det'); } catch { return null; } }
 
 /* ---------------- video analysis ---------------- */
 const vid = $('vid');
-const c192 = document.createElement('canvas'); c192.width = c192.height = 192; const x192 = c192.getContext('2d', { willReadFrequently: true });
+const cans = {};
+function canFor(s) { if (!cans[s]) { const c = document.createElement('canvas'); c.width = c.height = s; cans[s] = { c, x: c.getContext('2d', { willReadFrequently: true }) }; } return cans[s]; }
+// draw a square crop of the source into an s×s canvas, black outside the frame (avoids Safari's out-of-bounds drawImage bug)
+function drawCrop(x, src, crop, s) {
+  const W = src.videoWidth || src.width, H = src.videoHeight || src.height;
+  x.fillStyle = '#000'; x.fillRect(0, 0, s, s);
+  const sx0 = Math.max(0, crop.x), sy0 = Math.max(0, crop.y), sx1 = Math.min(W, crop.x + crop.s), sy1 = Math.min(H, crop.y + crop.s);
+  if (sx1 <= sx0 || sy1 <= sy0) return; const k = s/crop.s;
+  x.drawImage(src, sx0, sy0, sx1 - sx0, sy1 - sy0, (sx0 - crop.x)*k, (sy0 - crop.y)*k, (sx1 - sx0)*k, (sy1 - sy0)*k);
+}
 const gcv = document.createElement('canvas'); const gx = gcv.getContext('2d', { willReadFrequently: true });
 function waitEvt(el, ev, ms = 4000) { return new Promise(res => { let t; const h = () => { clearTimeout(t); el.removeEventListener(ev, h); res(true); }; el.addEventListener(ev, h); t = setTimeout(() => { el.removeEventListener(ev, h); res(false); }, ms); }); }
 async function seek(t) { if (Math.abs(vid.currentTime - t) < 1e-4) return; const p = waitEvt(vid, 'seeked', 3000); vid.currentTime = t; await p; }
-async function runPose(crop, src = vid) {
-  x192.fillStyle = '#000'; x192.fillRect(0, 0, 192, 192);
-  x192.drawImage(src, crop.x, crop.y, crop.s, crop.s, 0, 0, 192, 192);
-  const out = tf.tidy(() => model.execute(tf.browser.fromPixels(c192).toInt().expandDims(0)));
+async function runPose(crop, src = vid, net = model) {
+  const s = net === nets.precise ? 256 : 192, { c, x } = canFor(s);
+  drawCrop(x, src, crop, s);
+  const out = tf.tidy(() => net.execute(tf.browser.fromPixels(c).toInt().expandDims(0)));
   const d = await out.data(); out.dispose();
   const k = new Float32Array(51); let sc = 0;
   for (let j = 0; j < 17; j++) { k[j*3] = crop.x + d[j*3+1]*crop.s; k[j*3+1] = crop.y + d[j*3]*crop.s; k[j*3+2] = d[j*3+2]; sc += d[j*3+2]; }
-  return { k, score: sc/17 };
+  return { k, score: sc/17, used: crop };
 }
 function cropFrom(k, W, H) {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, c = 0;
   for (let j = 0; j < 17; j++) if (k[j*3+2] > 0.2) { c++; x0 = Math.min(x0, k[j*3]); x1 = Math.max(x1, k[j*3]); y0 = Math.min(y0, k[j*3+1]); y1 = Math.max(y1, k[j*3+1]); }
   if (c < 6) return null;
-  const s = Math.min(Math.max(W, H), Math.max(0.3*Math.min(W, H), Math.max(x1-x0, y1-y0)*1.5));
+  const s = Math.min(Math.max(W, H)*1.2, Math.max(0.2*Math.min(W, H), Math.max(x1-x0, y1-y0)*1.6));
   return { x: (x0+x1)/2 - s/2, y: (y0+y1)/2 - s/2, s };
 }
-async function poseAt(W, H, prevCrop, src = vid) {
+async function poseAt(W, H, prevCrop, src = vid, net = model) {
   const full = { x: (W - Math.max(W, H))/2, y: (H - Math.max(W, H))/2, s: Math.max(W, H) };
-  let r = await runPose(prevCrop || full, src);
-  if (r.score < 0.25 && prevCrop) r = await runPose(full, src);
+  let r = await runPose(prevCrop || full, src, net);
+  if (r.score < 0.25 && prevCrop) r = await runPose(full, src, net);
   const c = cropFrom(r.k, W, H);
-  if (!prevCrop && c) { const r2 = await runPose(c, src); if (r2.score >= r.score*0.9) r = r2; }
+  if (!prevCrop && c) { const r2 = await runPose(c, src, net); if (r2.score >= r.score*0.9) r = r2; }
   return { ...r, crop: r.score > 0.25 ? cropFrom(r.k, W, H) : null };
 }
-function batScores(k, W, H) {
+/* object detector: people (to lock on) and baseball bats */
+function iou(a, b) { const x0 = Math.max(a.x - a.w/2, b.x - b.w/2), x1 = Math.min(a.x + a.w/2, b.x + b.w/2), y0 = Math.max(a.y - a.h/2, b.y - b.h/2), y1 = Math.min(a.y + a.h/2, b.y + b.h/2); const i = Math.max(0, x1 - x0)*Math.max(0, y1 - y0); return i/(a.w*a.h + b.w*b.h - i + 1e-6); }
+function nms(list, th) { list.sort((p, q) => q.c - p.c); const out = []; for (const b of list) { if (out.every(o => iou(o, b) < th)) out.push(b); if (out.length >= 8) break; } return out; }
+async function detectAt(src, crop) {
+  const net = nets.det; if (!net) return null;
+  const { c, x } = canFor(320); drawCrop(x, src, crop, 320);
+  const t = tf.tidy(() => net.execute(tf.browser.fromPixels(c).toFloat().div(255).expandDims(0), NETS.det.out));
+  const d = await t.data(); t.dispose();
+  const people = [], bats = [], n = d.length/85;
+  for (let i = 0; i < n; i++) {
+    const o = i*85, ob = d[o+4]; if (ob < 0.05) continue;
+    const pc = ob*d[o+5], bc = ob*d[o+39]; if (pc < 0.25 && bc < 0.08) continue;
+    const b = { x: crop.x + d[o]*crop.s, y: crop.y + d[o+1]*crop.s, w: d[o+2]*crop.s, h: d[o+3]*crop.s };
+    if (pc >= 0.25) people.push({ ...b, c: pc }); if (bc >= 0.08) bats.push({ ...b, c: bc });
+  }
+  return { people: nms(people, 0.5), bats: nms(bats, 0.4) };
+}
+const bodyBox = k => { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, c = 0; for (let j = 0; j < 17; j++) if (k[j*3+2] > 0.3) { c++; x0 = Math.min(x0, k[j*3]); x1 = Math.max(x1, k[j*3]); y0 = Math.min(y0, k[j*3+1]); y1 = Math.max(y1, k[j*3+1]); } return c >= 6 ? { x: (x0+x1)/2, y: (y0+y1)/2, w: x1 - x0, h: y1 - y0 } : null; };
+// one tracked frame: pose in the crop that follows the player; if the pose jumps or fades, re-find the same player with the detector
+async function trackFrame(W, H, tr, net) {
+  let r = await poseAt(W, H, tr.crop, vid, net);
+  const bb = bodyBox(r.k), ref = tr.box;
+  const jumped = bb && ref && Math.hypot(bb.x - ref.x, bb.y - ref.y) > 0.45*Math.max(ref.h, ref.w);
+  if ((r.score < 0.32 || !bb || jumped) && nets.det) {
+    const side = ref ? Math.max(ref.h, ref.w)*3 : Math.max(W, H);
+    const search = ref ? { x: ref.x - side/2, y: ref.y - side/2, s: side } : { x: (W - side)/2, y: (H - side)/2, s: side };
+    const dd = await detectAt(vid, search);
+    if (dd && dd.people.length) {
+      const pick = ref ? dd.people.slice().sort((p, q) => Math.hypot(p.x - ref.x, p.y - ref.y) - Math.hypot(q.x - ref.x, q.y - ref.y))[0] : dd.people.slice().sort((p, q) => q.w*q.h - p.w*p.h)[0];
+      const s = Math.max(pick.w, pick.h)*1.3, r2 = await runPose({ x: pick.x - s/2, y: pick.y - s/2, s }, vid, net);
+      const b2 = bodyBox(r2.k);
+      if (r2.score > r.score*0.9 || jumped) { r = { ...r2, crop: r2.score > 0.25 ? cropFrom(r2.k, W, H) : null }; }
+      if (b2) tr.box = b2;
+    }
+  }
+  const b = bodyBox(r.k);
+  if (b && r.score > 0.3) tr.box = tr.box ? { x: tr.box.x*0.4 + b.x*0.6, y: tr.box.y*0.4 + b.y*0.6, w: tr.box.w*0.6 + b.w*0.4, h: tr.box.h*0.6 + b.h*0.4 } : b;
+  // smooth the crop so it does not jitter frame to frame
+  if (r.crop) tr.crop = tr.crop ? { x: tr.crop.x*0.5 + r.crop.x*0.5, y: tr.crop.y*0.5 + r.crop.y*0.5, s: tr.crop.s*0.6 + r.crop.s*0.4 } : r.crop;
+  return r;
+}
+/* bat: brightness edges + motion along rays from the hands, boosted where the detector sees a bat */
+const batState = { prev: null, lens: [] };
+function batScores(k, W, H, dets) {
   const GW = 256, sc = GW / W, GH = Math.round(H*sc);
-  if (gcv.width !== GW || gcv.height !== GH) { gcv.width = GW; gcv.height = GH; }
+  if (gcv.width !== GW || gcv.height !== GH) { gcv.width = GW; gcv.height = GH; batState.prev = null; }
   gx.drawImage(vid, 0, 0, GW, GH);
   const im = gx.getImageData(0, 0, GW, GH).data;
-  const I = (x, y) => { const xi = x|0, yi = y|0; if (xi < 0 || yi < 0 || xi >= GW || yi >= GH) return -1; const o = (yi*GW + xi)*4; return 0.3*im[o] + 0.59*im[o+1] + 0.11*im[o+2]; };
+  const gray = new Float32Array(GW*GH); for (let i = 0; i < gray.length; i++) gray[i] = 0.3*im[i*4] + 0.59*im[i*4+1] + 0.11*im[i*4+2];
+  const prev = batState.prev; batState.prev = gray;
+  const I = (x, y) => { const xi = x|0, yi = y|0; if (xi < 0 || yi < 0 || xi >= GW || yi >= GH) return -1; return gray[yi*GW + xi]; };
+  const M = (x, y) => { if (!prev) return 0; const xi = x|0, yi = y|0; if (xi < 0 || yi < 0 || xi >= GW || yi >= GH) return 0; return Math.abs(gray[yi*GW + xi] - prev[yi*GW + xi]); };
   const hx = (k[27] + k[30])/2*sc, hy = (k[28] + k[31])/2*sc;
   const Hg = Math.max(20, (((k[45+1] + k[48+1])/2) - k[1]) / 0.88 * sc);
-  const out = new Float32Array(NA); const r0 = 0.07*Hg, r1 = 0.42*Hg, d = Math.max(2, 0.035*Hg), steps = 18;
-  const elbAng = [7, 8].map(j => Math.atan2(k[j*3+1]*sc - hy, k[j*3]*sc - hx));
+  const out = new Float32Array(NA); const r0 = 0.07*Hg, r1 = 0.5*Hg, d = Math.max(2, 0.035*Hg), steps = 22;
+  const limb = [7, 8, 5, 6].map(j => Math.atan2(k[j*3+1]*sc - hy, k[j*3]*sc - hx));
   for (let a = 0; a < NA; a++) {
-    const ang = a*5*Math.PI/180, cx = Math.cos(ang), cy = Math.sin(ang), nx = -cy, ny = cx; let sum = 0;
-    for (let s = 0; s < steps; s++) { const r = r0 + (r1 - r0)*s/(steps-1); const x = hx + cx*r, y = hy + cy*r; const c = I(x, y), s1 = I(x + nx*d, y + ny*d), s2 = I(x - nx*d, y - ny*d); if (c < 0 || s1 < 0 || s2 < 0) continue; sum += Math.max(0, Math.abs(c - (s1 + s2)/2) - Math.abs(s1 - s2)*0.5); }
-    let v = sum/steps;
-    for (const ea of elbAng) { let dd = Math.abs(ang - ea); dd = Math.min(dd, 2*Math.PI - dd); if (dd < 0.35) v *= 0.3; }
+    const ang = a*5*Math.PI/180, cx = Math.cos(ang), cy = Math.sin(ang), nx = -cy, ny = cx; let sum = 0, mot = 0;
+    for (let s = 0; s < steps; s++) {
+      const r = r0 + (r1 - r0)*s/(steps-1), x = hx + cx*r, y = hy + cy*r;
+      const c = I(x, y), s1 = I(x + nx*d, y + ny*d), s2 = I(x - nx*d, y - ny*d); if (c < 0 || s1 < 0 || s2 < 0) continue;
+      sum += Math.max(0, Math.abs(c - (s1 + s2)/2) - Math.abs(s1 - s2)*0.5); mot += M(x, y);
+    }
+    let v = sum/steps + 0.35*mot/steps;
+    for (const ea of limb) { let dd = Math.abs(ang - ea); dd = Math.min(dd, 2*Math.PI - dd); if (dd < 0.3) v *= 0.35; }
     out[a] = v;
+  }
+  // detector boost: the bat's far end is the box corner farthest from the hands
+  let mx = 0; for (const v of out) mx = Math.max(mx, v);
+  const hpx = (k[27] + k[30])/2, hpy = (k[28] + k[31])/2, bodyPx = Hg/sc;
+  for (const b of (dets && dets.bats) || []) {
+    const inside = hpx > b.x - b.w/2 - 0.12*bodyPx && hpx < b.x + b.w/2 + 0.12*bodyPx && hpy > b.y - b.h/2 - 0.12*bodyPx && hpy < b.y + b.h/2 + 0.12*bodyPx;
+    if (!inside) continue;
+    let best = null; for (const [cx2, cy2] of [[b.x - b.w/2, b.y - b.h/2], [b.x + b.w/2, b.y - b.h/2], [b.x - b.w/2, b.y + b.h/2], [b.x + b.w/2, b.y + b.h/2]]) { const dd = Math.hypot(cx2 - hpx, cy2 - hpy); if (!best || dd > best.d) best = { d: dd, x: cx2, y: cy2 }; }
+    if (best.d < 0.2*bodyPx) continue;
+    batState.lens.push(best.d/bodyPx);
+    const ta = Math.atan2(best.y - hpy, best.x - hpx);
+    for (let a = 0; a < NA; a++) { let dd = Math.abs(a*5*Math.PI/180 - ta); dd = Math.min(dd, 2*Math.PI - dd); out[a] += (mx || 1)*1.6*b.c*Math.exp(-(dd*dd)/(2*0.2*0.2)); }
   }
   return out;
 }
@@ -163,17 +242,22 @@ async function analyzeFile(file, opts = {}) {
     const vdur = Number.isFinite(vid.duration) && vid.duration > 0 ? vid.duration : (opts.duration || 0);
     if (!vdur) throw new Error('This video has no readable length. Try recording again or upload it from your library.');
     sizeStage();
-    await ensureModel(t => msg(t, 0.02));
+    const net = await ensurePrecise(t => msg(t, 0.02));
+    msg(kind === 'hit' ? 'Loading the player and bat finder…' : 'Loading the player finder…', 0.03); await ensureDetector();
     const W = vid.videoWidth, H = vid.videoHeight, dur = Math.min(vdur, 30*slow);
     const realDur = dur/slow;
     let tA = 0, tB = dur;
+    // lock on: the biggest person in the first frame is the player
+    const tr = { crop: null, box: null };
+    await seek(Math.min(dur*0.1, 0.2*slow));
+    if (nets.det) { const side = Math.max(W, H), dd = await detectAt(vid, { x: (W - side)/2, y: (H - side)/2, s: side }); if (dd && dd.people.length) { const p = dd.people.slice().sort((a, b) => b.w*b.h - a.w*a.h)[0]; tr.box = { x: p.x, y: p.y, w: p.w, h: p.h }; const s = Math.max(p.w, p.h)*1.3; tr.crop = { x: p.x - s/2, y: p.y - s/2, s }; } }
     if (realDur > 3.6) {
       // coarse pass: find the moment of fastest hand movement
-      const step = slow/6, ts = [], ks = []; let crop = null;
+      const step = slow/6, ts = [], ks = []; const ctr = { ...tr };
       for (let t = 0; t < dur; t += step) {
         if (st.cancel) throw new Error('cancel');
-        await seek(t); const r = await poseAt(W, H, crop); crop = r.crop; ts.push(t); ks.push(r.k);
-        drawLive(r.k, W, H); msg('Finding the ' + MODE[kind].noun + '…', 0.05 + 0.25*t/dur);
+        await seek(t); const r = await trackFrame(W, H, ctr, model || net); ts.push(t); ks.push(r.k);
+        drawLive(r.k, W, H); msg('Finding the ' + MODE[kind].noun + '…', 0.05 + 0.2*t/dur);
       }
       const sp = ks.map((k, i) => { if (!i) return 0; const p = ks[i-1]; const v = j => k[j*3+2] > 0.2 && p[j*3+2] > 0.2 ? Math.hypot(k[j*3]-p[j*3], k[j*3+1]-p[j*3+1]) : 0; return Math.max(v(9), v(10)); });
       const pk = ts[sp.indexOf(Math.max(...sp))] || dur/2;
@@ -182,23 +266,39 @@ async function analyzeFile(file, opts = {}) {
     }
     const perReal = slow > 1 ? 60 : 30, mstep = slow/perReal;
     const times = []; for (let t = tA; t <= tB + 1e-6; t += mstep) times.push(t);
-    const raw = [], scores = [], handsPx = []; let crop = null, found = 0;
+    const raw = [], dets = []; let found = 0; batState.prev = null; batState.lens = [];
     for (let i = 0; i < times.length; i++) {
       if (st.cancel) throw new Error('cancel');
       await seek(times[i]);
-      const r = await poseAt(W, H, crop); crop = r.crop; raw.push(r.k); if (r.score > 0.3) found++;
-      if (kind === 'hit') scores.push(r.score > 0.2 ? batScores(r.k, W, H) : null);
+      const r = await trackFrame(W, H, tr, net); raw.push(r.k); if (r.score > 0.3) found++;
+      if (kind === 'hit' && nets.det && r.score > 0.25) {
+        const hx = (r.k[27] + r.k[30])/2, hy = (r.k[28] + r.k[31])/2, bh = tr.box ? Math.max(tr.box.h, tr.box.w) : Math.max(W, H)*0.5, s = bh*1.35;
+        dets.push(await detectAt(vid, { x: hx - s/2, y: hy - s/2, s }));
+      } else dets.push(null);
       drawLive(r.k, W, H);
-      msg('Tracking joints… frame ' + (i+1) + ' of ' + times.length, 0.3 + 0.65*(i+1)/times.length);
+      msg('Tracking joints' + (kind === 'hit' ? ' and bat' : '') + '… frame ' + (i+1) + ' of ' + times.length, 0.3 + 0.62*(i+1)/times.length);
     }
     if (found < times.length*0.4) throw new Error('Could not find a player in most frames. Keep the whole body in frame, in good light, with nobody else close by.');
-    msg('Scoring mechanics…', 0.97);
+    msg('Scoring mechanics…', 0.95);
     const clean = cleanRaw(raw, 1.0);
     const nz = normalize(clean, leadLeft);
     const seq = { ...nz, fps: perReal, slow, vw: W, vh: H, kind }; // H stays the player's body height in pixels
     if (kind === 'hit') {
-      const path = solveBat(scores, null, slow, nz.H);
-      seq.batTips = clean.map((k, i) => { const p = path[i]; if (!scores[i]) return null; const hx = (k[27] + k[30])/2, hy = (k[28] + k[31])/2; const a = p.angleIdx*5*Math.PI/180; const L = 0.40*nz.H; const tx = hx + Math.cos(a)*L, ty = hy + Math.sin(a)*L; return { x: (tx - nz.originX)*nz.fwd/nz.H, y: (ty - nz.groundY)/nz.H, c: p.conf }; });
+      // second look at each frame for the bat, now that the joints are cleaned up
+      const scores = [];
+      batState.prev = null;
+      for (let i = 0; i < times.length; i++) {
+        if (st.cancel) throw new Error('cancel');
+        await seek(times[i]);
+        scores.push(batScores(clean[i], W, H, dets[i]));
+        msg('Following the bat… frame ' + (i+1) + ' of ' + times.length, 0.95 + 0.04*(i+1)/times.length);
+      }
+      const hs = clean.map((k, i) => { const p = clean[Math.max(0, i-1)]; return Math.hypot((k[27]+k[30])/2 - (p[27]+p[30])/2, (k[28]+k[31])/2 - (p[28]+p[31])/2)/nz.H; });
+      const allow = hs.map(v => 2 + 80*v*(30/perReal)*slow);
+      const path = solveBat(scores, allow);
+      const lens = batState.lens.slice().sort((a, b) => a - b);
+      const L = (lens.length >= 3 ? clamp(lens[lens.length >> 1], 0.32, 0.62) : 0.45)*nz.H;
+      seq.batTips = clean.map((k, i) => { const p = path[i]; if (!scores[i]) return null; const hx = (k[27] + k[30])/2, hy = (k[28] + k[31])/2; const a = p.angleIdx*5*Math.PI/180; const tx = hx + Math.cos(a)*L, ty = hy + Math.sin(a)*L; return { x: (tx - nz.originX)*nz.fwd/nz.H, y: (ty - nz.groundY)/nz.H, c: p.conf }; });
       addBatSpeed(seq);
     }
     st.times = times; st.seq = seq;
@@ -779,4 +879,5 @@ setMode(st.mode);
 store.init();
 requestAnimationFrame(loop);
 setTimeout(() => { ensureModel().catch(() => {}); }, 1500);
+setTimeout(() => { ensurePrecise().catch(() => {}); ensureDetector(); }, 4000);
 })();

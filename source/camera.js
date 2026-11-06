@@ -137,4 +137,13 @@ $('bkIn').onchange = async e => {
   }
   $('installHide').onclick = () => { card.hidden = true; try { localStorage.setItem('swinglab.installHide', '1'); } catch {} };
 }
-if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  const hadSW = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register('sw.js').then(reg => { setInterval(() => reg.update().catch(() => {}), 30*60*1000); document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); }); }).catch(() => {});
+  // a new version took over: reload when nothing is in progress, so you never run stale code
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadSW) return;
+    const go = () => { if (!st.busy && !cam.live) location.reload(); else setTimeout(go, 2000); };
+    toast('SwingLab updated. Reloading…'); setTimeout(go, 800);
+  });
+}
