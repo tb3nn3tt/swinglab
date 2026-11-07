@@ -184,12 +184,16 @@ function solveBat(scores, allow) {
 /* bat path v2: state = (previous angle, angle), so the solver knows the bat's turning speed and keeps it smooth:
    the bat speeds up and slows down gradually and does not flip back and forth. anchors = frames the user tapped. */
 const BAT_W = { u: 3, w1: 0.5, w2: 0.6, w3: 0.15, ek: 0.85 };
-function solveBat2(scores, allow, anchors, W8) {
+function solveBat2(scores, allow, anchors, W8, dir) {
   const Wt = { ...BAT_W, ...(W8 || {}) };
   const n = scores.length, A = NA, wrap = d => ((d + A/2) % A + A) % A - A/2;
+  // abs mode (used by the follow-up pass): strong frames count for more than weak ones instead of every frame capped alike
+  let gden = 0;
+  if (Wt.abs) { const sp = scores.filter(Boolean).map(s => { const arr = Array.from(s); return Math.max(...arr) - percentile(arr, 0.5); }); gden = percentile(sp, 0.5) || 1; }
   const unary = scores.map((s, i) => {
     const u = new Float32Array(A);
-    if (s) { const arr = Array.from(s), m = percentile(arr, 0.5), mx = Math.max(...arr), den = (mx - m) || 1, conf = clamp((mx - m)/(m + 8), 0, 1); for (let a = 0; a < A; a++) u[a] = -((s[a] - m)/den)*conf*Wt.u; }
+    if (s && Wt.abs) { const arr = Array.from(s), m = percentile(arr, 0.5), wi = Wt.wgt ? Wt.wgt[i] : 1; for (let a = 0; a < A; a++) u[a] = -Math.min(2.5, Math.max(0, s[a] - m)/gden)*wi*Wt.u; }
+    else if (s) { const arr = Array.from(s), m = percentile(arr, 0.5), mx = Math.max(...arr), den = (mx - m) || 1, conf = clamp((mx - m)/(m + 8), 0, 1); for (let a = 0; a < A; a++) u[a] = -((s[a] - m)/den)*conf*Wt.u; }
     const an = anchors && anchors[i];
     if (an != null) for (let a = 0; a < A; a++) { const d = Math.abs(wrap(a - an)); u[a] += d <= 1 ? -6 : 8 + d*0.2; }
     return u;
@@ -200,13 +204,14 @@ function solveBat2(scores, allow, anchors, W8) {
   for (let i = 1; i < n; i++) {
     const al = Math.max(1.5, Math.min(16, allow ? allow[i] : 8)), lim = Math.min(18, Math.ceil(al*1.8)), acc = Math.max(1.2, al*0.6);
     // how fast the bat should be turning right now, from how fast the hands move (direction unknown, speed known)
-    const e = Math.max(0, (al - 2)*Wt.ek), sig = 1.5 + 0.35*e;
+    const e = Wt.exp ? Wt.exp[i] : Math.max(0, (al - 2)*Wt.ek), sig = 1.5 + 0.35*e;
     const nc = new Float32Array(A*A).fill(Infinity), bk = new Int8Array(A*A);
     for (let p = 0; p < A; p++) {
       for (let dq = -limPrev; dq <= limPrev; dq++) {
         const q = (p - dq + A) % A, c0 = cost[q*A + p]; if (c0 === Infinity) continue;
         for (let d = -lim; d <= lim; d++) {
           const a = (p + d + A) % A, k = p*A + a;
+          if (dir && i >= dir.a && i <= dir.b && d*dir.sign < -1) continue; // barrel may not turn backward inside the swing
           const v = c0 + Wt.w1*(d/al)**2 + Wt.w2*((d - dq)/acc)**2 + Wt.w3*((Math.abs(d) - e)/sig)**2;
           if (v < nc[k]) { nc[k] = v; bk[k] = q; }
         }
@@ -219,12 +224,53 @@ function solveBat2(scores, allow, anchors, W8) {
   const path = new Array(n); let p = Math.floor(best/A), a = best % A;
   for (let i = n - 1; i >= 1; i--) { path[i] = a; const q = backs[i][p*A + a]; a = p; p = q; }
   path[0] = a;
-  return path.map((ai, i) => {
+  const out = path.map((ai, i) => {
     const s = scores[i]; let conf = 0;
     if (anchors && anchors[i] != null) conf = 1;
     else if (s) { const arr = Array.from(s), m = percentile(arr, 0.5), mx = Math.max(...arr), den = (mx - m) || 1; conf = clamp((mx - m)/(m + 8), 0, 1)*clamp((s[ai] - m)/den, 0, 1); }
     return { angleIdx: ai, conf: Math.max(conf, 0.25) };
   });
+  out.cost = cost[best]; return out;
+}
+
+// Follow-up pass: through the swing the barrel sweeps one way. Find frames where the first path turns
+// backward (usually motion blur at contact fooling the edge finder), trust their evidence less, re-solve
+// with backward turns forbidden inside the swing, then lightly smooth. Tapped frames stay where tapped.
+function swingWindow(hsp) {
+  const n = hsp.length; if (n < 6) return null;
+  let pk = 0; for (let i = 1; i < n; i++) if (hsp[i] > hsp[pk]) pk = i;
+  const top = hsp[pk]; if (!(top > 0)) return null;
+  let a = pk; while (a > 0 && hsp[a] >= 0.3*top) a--;
+  let b = pk; while (b < n - 1 && hsp[b] >= 0.22*top) b++;
+  while (b < n - 1 && hsp[b + 1] < hsp[b]) b++;
+  return b - a >= 4 ? { a, b, pk } : null;
+}
+function refineBat(scores, allow, anchors, hsp, W8) {
+  const free = solveBat2(scores, allow, anchors, W8), n = free.length, A = NA, deg = 360/A;
+  const wrapB = d => ((d + A/2) % A + A) % A - A/2;
+  const win = hsp && swingWindow(hsp); free.refined = false;
+  let path = free;
+  if (win) {
+    const { a, b } = win; let fwd = 0, back = 0, sum = 0;
+    for (let i = a + 1; i <= b; i++) sum += wrapB(free[i].angleIdx - free[i-1].angleIdx);
+    const sign = sum < 0 ? -1 : 1, bad = [];
+    for (let i = a + 1; i <= b; i++) { const d = wrapB(free[i].angleIdx - free[i-1].angleIdx)*sign; if (d > 0) fwd += d; else back -= d; if (d < -1) bad.push(i); }
+    // only when the direction is clear: most of the sweep goes one way
+    if (bad.length && fwd > 2*back && fwd*deg >= 90) {
+      // second solve: backward turns forbidden in the swing, and evidence weighed by how strong it really is,
+      // so a few sharp frames of the bat beat a run of blurry frames that latch onto the arms or the knob side
+      const ref = solveBat2(scores, allow, anchors, { ...(W8 || {}), abs: true, u: 1.5 }, { a, b, sign });
+      const keepsTaps = !anchors || Object.keys(anchors).every(k => { const i = +k; return !ref[i] || Math.abs(wrapB(ref[i].angleIdx - anchors[k])) <= 1; });
+      if (keepsTaps) { path = ref; path.refined = true; path.window = win; path.fixedFrames = bad; }
+    }
+  }
+  // light smoothing on the unwrapped angle; tapped frames are pinned
+  const un = new Float64Array(n); un[0] = path[0].angleIdx;
+  for (let i = 1; i < n; i++) un[i] = un[i-1] + wrapB(path[i].angleIdx - path[i-1].angleIdx);
+  const sm = gauss1d(Array.from(un), 0.7);
+  const out = path.map((q, i) => ({ angleIdx: anchors && anchors[i] != null ? anchors[i] : ((sm[i] % A) + A) % A, conf: q.conf }));
+  out.refined = path.refined; out.window = path.window; out.fixedFrames = path.fixedFrames || []; out.cost = path.cost;
+  return out;
 }
 
 /* ---------- phase detection ---------- */
@@ -581,4 +627,4 @@ function addBatSpeed(seq) {
   seq.batOk = ok > 0.55;
 }
 
-if (typeof module !== 'undefined') module.exports = { NJ, JN, sideMap, cleanRaw, unifyHands, detectSides, normalize, toPixel, solveBat, solveBat2, BAT_W, detectPhases, analyzeMotion, packRecord, seqFromRecord, alignIndex, lerpFrame, compareRecords, buildDemo, buildPro, buildFaulty, buildModel, MODELS, addBatSpeed, NA, angAt, P, mid, gauss1d, deriv, speedSeries };
+if (typeof module !== 'undefined') module.exports = { NJ, JN, sideMap, cleanRaw, unifyHands, detectSides, normalize, toPixel, solveBat, solveBat2, refineBat, swingWindow, BAT_W, detectPhases, analyzeMotion, packRecord, seqFromRecord, alignIndex, lerpFrame, compareRecords, buildDemo, buildPro, buildFaulty, buildModel, MODELS, addBatSpeed, NA, angAt, P, mid, gauss1d, deriv, speedSeries };

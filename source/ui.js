@@ -249,7 +249,7 @@ async function probeFps() {
 }
 // turn the solved bat angles into tips (uses the user's taps when there are any)
 function applyBatPath(seq) {
-  const b = st.batCtx, nz = b.nz, path = solveBat2(b.scores, b.allow, b.anchors);
+  const b = st.batCtx, nz = b.nz, path = refineBat(b.scores, b.allow, b.anchors, b.hsp);
   const tl = b.taps.slice().sort((x, y) => x - y), L = tl.length ? clamp(tl[tl.length >> 1], 0.3*nz.H, 0.7*nz.H) : b.L;
   b.tipsPx = b.hands.map(([hx, hy], i) => { const a = path[i].angleIdx*5*Math.PI/180; return [hx + Math.cos(a)*L, hy + Math.sin(a)*L]; });
   seq.batTips = b.tipsPx.map(([tx, ty], i) => ({ x: (tx - nz.originX)*nz.fwd/nz.H, y: (ty - nz.groundY)/nz.H, c: path[i].conf }));
@@ -340,7 +340,7 @@ async function analyzeFile(file, opts = {}) {
       const allow = hs.map((v, i) => (i >= pk - Math.round(0.15*perReal) && i <= pk + Math.round(0.8*perReal)) ? Math.max(12, 2 + 80*v) : 2 + 80*v);
       const lens = batState.lens.slice().sort((a, b) => a - b);
       const L = (lens.length >= 3 ? clamp(lens[lens.length >> 1], 0.32, 0.62) : 0.45)*nz.H;
-      st.batCtx = { scores, allow, hands: clean.map(k => [(k[27] + k[30])/2, (k[28] + k[31])/2]), L, nz, anchors: {}, taps: [] };
+      st.batCtx = { scores, allow, hsp: hsS, hands: clean.map(k => [(k[27] + k[30])/2, (k[28] + k[31])/2]), L, nz, anchors: {}, taps: [] };
       applyBatPath(seq);
     } else st.batCtx = null;
     // which side leads and where the pitcher is, from the motion itself
