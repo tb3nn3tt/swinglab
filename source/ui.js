@@ -112,7 +112,20 @@ function drawCrop(x, src, crop, s) {
 }
 const gcv = document.createElement('canvas'); const gx = gcv.getContext('2d', { willReadFrequently: true });
 function waitEvt(el, ev, ms = 4000) { return new Promise(res => { let t; const h = () => { clearTimeout(t); el.removeEventListener(ev, h); res(true); }; el.addEventListener(ev, h); t = setTimeout(() => { el.removeEventListener(ev, h); res(false); }, ms); }); }
-async function seek(t) { if (Math.abs(vid.currentTime - t) < 1e-4) return; const p = waitEvt(vid, 'seeked', 3000); vid.currentTime = t; await p; }
+// where the tracker reads pixels: the video element, or our own decoder when the browser locks the video's pixels (some HDR/HEVC phone clips)
+let reader = null;
+const asrc = () => reader ? reader.canvas : vid;
+function pixelsLocked() { try { const c = document.createElement('canvas'); c.width = c.height = 2; const x = c.getContext('2d'); x.drawImage(vid, 0, 0, 2, 2); x.getImageData(0, 0, 1, 1); return false; } catch { return true; } }
+async function openReader(file) {
+  const fix = 'In your camera settings, turn off HDR10+ video (and High efficiency video if you see it), record again, and upload that clip.';
+  if (!('VideoDecoder' in window)) throw new Error('This browser locks the pixels of this video, so the tracker cannot read it. Update Chrome, or: ' + fix);
+  if (file.size > 600e6) throw new Error('This video is too large to decode here. Trim it to the swing, or: ' + fix);
+  let info; try { info = mp4Demux(await file.arrayBuffer()); } catch { throw new Error('This video\'s pixels are locked and its format could not be read. ' + fix); }
+  let ok = false; try { ok = (await VideoDecoder.isConfigSupported({ codec: info.codec, codedWidth: info.width, codedHeight: info.height, description: info.description })).supported; } catch {}
+  if (!ok) throw new Error(`This phone cannot decode this video (${info.codec.split('.')[0]}) for tracking. ` + fix);
+  const r = makeFrameReader(file, info); r.info = info; await r.frameAt(0); return r;
+}
+async function seek(t) { if (reader) { await reader.frameAt(t); return; } if (Math.abs(vid.currentTime - t) < 1e-4) return; const p = waitEvt(vid, 'seeked', 3000); vid.currentTime = t; await p; }
 const LR = [[1, 2], [3, 4], [5, 6], [7, 8], [9, 10], [11, 12], [13, 14], [15, 16]];
 async function runPose(crop, src = vid, net = model) {
   const s = net === nets.precise ? 256 : 192, { c, x } = canFor(s);
@@ -167,16 +180,16 @@ async function detectAt(src, crop) {
 const bodyBox = k => { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, c = 0; for (let j = 0; j < 17; j++) if (k[j*3+2] > 0.3) { c++; x0 = Math.min(x0, k[j*3]); x1 = Math.max(x1, k[j*3]); y0 = Math.min(y0, k[j*3+1]); y1 = Math.max(y1, k[j*3+1]); } return c >= 6 ? { x: (x0+x1)/2, y: (y0+y1)/2, w: x1 - x0, h: y1 - y0 } : null; };
 // one tracked frame: pose in the crop that follows the player; if the pose jumps or fades, re-find the same player with the detector
 async function trackFrame(W, H, tr, net) {
-  let r = await poseAt(W, H, tr.crop, vid, net);
+  let r = await poseAt(W, H, tr.crop, asrc(), net);
   const bb = bodyBox(r.k), ref = tr.box;
   const jumped = bb && ref && Math.hypot(bb.x - ref.x, bb.y - ref.y) > 0.45*Math.max(ref.h, ref.w);
   if ((r.score < 0.32 || !bb || jumped) && nets.det) {
     const side = ref ? Math.max(ref.h, ref.w)*3 : Math.max(W, H);
     const search = ref ? { x: ref.x - side/2, y: ref.y - side/2, s: side } : { x: (W - side)/2, y: (H - side)/2, s: side };
-    const dd = await detectAt(vid, search);
+    const dd = await detectAt(asrc(), search);
     if (dd && dd.people.length) {
       const pick = ref ? dd.people.slice().sort((p, q) => Math.hypot(p.x - ref.x, p.y - ref.y) - Math.hypot(q.x - ref.x, q.y - ref.y))[0] : dd.people.slice().sort((p, q) => q.w*q.h - p.w*p.h)[0];
-      const s = Math.max(pick.w, pick.h)*1.3, r2 = await runPose({ x: pick.x - s/2, y: pick.y - s/2, s }, vid, net);
+      const s = Math.max(pick.w, pick.h)*1.3, r2 = await runPose({ x: pick.x - s/2, y: pick.y - s/2, s }, asrc(), net);
       const b2 = bodyBox(r2.k);
       if (r2.score > r.score*0.9 || jumped) { r = { ...r2, crop: r2.score > 0.25 ? cropFrom(r2.k, W, H) : null }; }
       if (b2) tr.box = b2;
@@ -196,7 +209,7 @@ function grabGray(W, H) { return grabFrame(W, H).gray; }
 function grabFrame(W, H) {
   const GH = Math.round(H*GW/W);
   if (gcv.width !== GW || gcv.height !== GH) { gcv.width = GW; gcv.height = GH; }
-  gx.drawImage(vid, 0, 0, GW, GH);
+  gx.drawImage(asrc(), 0, 0, GW, GH);
   const im = gx.getImageData(0, 0, GW, GH).data, n = GW*GH, g = new Uint8Array(n), rgb = new Uint8Array(n*3);
   for (let i = 0; i < n; i++) { const r = im[i*4], gg = im[i*4+1], b = im[i*4+2]; rgb[i*3] = r; rgb[i*3+1] = gg; rgb[i*3+2] = b; g[i] = (77*r + 150*gg + 29*b) >> 8; }
   return { gray: g, rgb, w: GW, h: GH };
@@ -285,6 +298,8 @@ async function analyzeFile(file, opts = {}) {
     if (!Number.isFinite(vid.duration) || vid.duration <= 0) { // clips recorded in the browser often report no length until seeked to the end
       const p = waitEvt(vid, 'durationchange', 3000); try { vid.currentTime = 1e7; } catch {} await p; await seek(0);
     }
+    if (reader) { reader.close(); reader = null; }
+    if (window.__forceDecode || pixelsLocked()) { msg('This video keeps its pixels locked. Decoding it directly…', 0.02); reader = await openReader(file); }
     const vdur = Number.isFinite(vid.duration) && vid.duration > 0 ? vid.duration : (opts.duration || 0);
     if (!vdur) throw new Error('This video has no readable length. Try recording again or upload it from your library.');
     sizeStage();
@@ -296,7 +311,7 @@ async function analyzeFile(file, opts = {}) {
     // lock on: the biggest person in the first frame is the player
     const tr = { crop: null, box: null };
     await seek(Math.min(dur*0.1, 0.2*slow));
-    if (nets.det) { const side = Math.max(W, H), dd = await detectAt(vid, { x: (W - side)/2, y: (H - side)/2, s: side }); if (dd && dd.people.length) { const p = dd.people.slice().sort((a, b) => b.w*b.h - a.w*a.h)[0]; tr.box = { x: p.x, y: p.y, w: p.w, h: p.h }; const s = Math.max(p.w, p.h)*1.3; tr.crop = { x: p.x - s/2, y: p.y - s/2, s }; } }
+    if (nets.det) { const side = Math.max(W, H), dd = await detectAt(asrc(), { x: (W - side)/2, y: (H - side)/2, s: side }); if (dd && dd.people.length) { const p = dd.people.slice().sort((a, b) => b.w*b.h - a.w*a.h)[0]; tr.box = { x: p.x, y: p.y, w: p.w, h: p.h }; const s = Math.max(p.w, p.h)*1.3; tr.crop = { x: p.x - s/2, y: p.y - s/2, s }; } }
     if (realDur > 3.6) {
       // coarse pass: find the moment of fastest hand movement
       const step = slow/6, ts = [], ks = []; const ctr = { ...tr };
@@ -311,7 +326,7 @@ async function analyzeFile(file, opts = {}) {
       tA = Math.max(0, pk - pre); tB = Math.min(dur, pk + post);
     }
     msg('Reading the frame rate…', 0.28);
-    const nativeFps = await probeFps();
+    const nativeFps = reader ? clamp(Math.round(reader.info.fps), 24, 240) : await probeFps();
     // every frame the video has, up to ~200 frames for the swing window
     const mstep = Math.max(1/nativeFps, (tB - tA)/200), perReal = slow/mstep;
     // aim at the middle of each video frame: seeking right onto a frame boundary shows the frame before it on some browsers, which shifts and jitters everything by a frame
@@ -324,7 +339,7 @@ async function analyzeFile(file, opts = {}) {
       const r = await trackFrame(W, H, tr, net); raw.push(r.k); if (r.score > 0.3) found++;
       if (kind === 'hit' && nets.det && r.score > 0.25) {
         const hx = (r.k[27] + r.k[30])/2, hy = (r.k[28] + r.k[31])/2, bh = tr.box ? Math.max(tr.box.h, tr.box.w) : Math.max(W, H)*0.5, s = bh*1.35;
-        dets.push(await detectAt(vid, { x: hx - s/2, y: hy - s/2, s }));
+        dets.push(await detectAt(asrc(), { x: hx - s/2, y: hy - s/2, s }));
       } else dets.push(null);
       drawLive(r.k, W, H);
       msg('Tracking joints' + (kind === 'hit' ? ' and bat' : '') + '… frame ' + (i+1) + ' of ' + times.length, 0.3 + 0.62*(i+1)/times.length);
@@ -368,9 +383,9 @@ async function analyzeFile(file, opts = {}) {
       for (let i = 0; i < scores.length; i++) {
         if (!fgs[i] || (firstFast >= 0 && i < firstFast - Math.round(0.1*perReal))) continue;
         const k = clean[i], fg = Float32Array.from(fgs[i], v => v/255), hx = (k[27] + k[30])/2*gsc, hy = (k[28] + k[31])/2*gsc;
-        scores[i] = fgBatScores(fg, grays[i], GW, GHh, hx, hy, L*1.25*gsc, [[k[21]*gsc, k[22]*gsc], [k[24]*gsc, k[25]*gsc]]);
+        scores[i] = fgBatScores(fg, grays[i], GW, GHh, hx, hy, L*1.25*gsc, [[k[21]*gsc, k[22]*gsc], [k[24]*gsc, k[25]*gsc]], undefined, bgm.gain);
       }
-      st.batCtx = { dbg: { fgFrom, bg: !!bgm, used: fgs.map(Boolean) }, scores, allow, hsp: hsS, clean, hands: clean.map(k => [(k[27] + k[30])/2, (k[28] + k[31])/2]), L, nz, anchors: {}, taps: [] };
+      st.batCtx = { dbg: { fgFrom, bg: !!bgm, gain: bgm && bgm.gain, used: fgs.map(Boolean) }, scores, allow, hsp: hsS, clean, hands: clean.map(k => [(k[27] + k[30])/2, (k[28] + k[31])/2]), L, nz, anchors: {}, taps: [] };
       applyBatPath(seq);
     } else st.batCtx = null;
     // which side leads and where the pitcher is, from the motion itself
@@ -390,7 +405,7 @@ async function analyzeFile(file, opts = {}) {
   } catch (e) {
     if (e.message === 'cancel') { loadDemo(); toast('Analysis canceled.'); }
     else { loadDemo(); toast(e.message || 'Something went wrong while analyzing.'); }
-  } finally { proc.hidden = true; st.busy = false; }
+  } finally { proc.hidden = true; st.busy = false; if (reader) { reader.close(); reader = null; } }
 }
 function drawLive(k, W, H) {
   const { ctx, w, h } = canvasCtx(); ctx.clearRect(0, 0, w, h);

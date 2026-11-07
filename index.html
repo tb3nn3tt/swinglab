@@ -543,6 +543,96 @@ i.dot.good { background: var(--good); } i.dot.watch { background: var(--watch); 
 
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
 <script>
+/* ---------------- tiny MP4/MOV demuxer: just enough to hand video samples to WebCodecs ----------------
+   Some phone videos (HDR, HEVC) play in the browser but their pixels are locked away from scripts, so the
+   tracker cannot read them. Decoding the file ourselves with WebCodecs gets around that. */
+function mp4Demux(buf) {
+  const dv = new DataView(buf), u8 = new Uint8Array(buf);
+  const u32 = o => dv.getUint32(o), u16 = o => dv.getUint16(o), type = o => String.fromCharCode(u8[o], u8[o+1], u8[o+2], u8[o+3]);
+  const kids = (s, e) => { const out = []; let o = s; while (o + 8 <= e) { let sz = u32(o); const t = type(o + 4); let h = 8; if (sz === 1) { sz = Number(dv.getBigUint64(o + 8)); h = 16; } else if (sz === 0) sz = e - o; if (sz < h || o + sz > e) break; out.push({ t, s: o + h, e: o + sz, o }); o += sz; } return out; };
+  const find = (s, e, t) => kids(s, e).find(b => b.t === t);
+  const path = (b, ...ts) => { for (const t of ts) { if (!b) return null; b = find(b.s, b.e, t); } return b; };
+  const moov = kids(0, buf.byteLength).find(b => b.t === 'moov'); if (!moov) throw new Error('no moov');
+  for (const trak of kids(moov.s, moov.e).filter(b => b.t === 'trak')) {
+    const hdlr = path(trak, 'mdia', 'hdlr'); if (!hdlr || type(hdlr.s + 8) !== 'vide') continue;
+    const tkhd = path(trak, 'tkhd'), tv = u8[tkhd.s]; const mo = tkhd.s + (tv === 1 ? 4 + 8 + 8 + 4 + 4 + 8 : 4 + 4 + 4 + 4 + 4 + 4) + 8 + 2 + 2 + 2 + 2;
+    const fx = o => dv.getInt32(o)/65536; const a = fx(mo), b = fx(mo + 4); const rotation = Math.round(Math.atan2(b, a)*180/Math.PI);
+    const mdhd = path(trak, 'mdia', 'mdhd'), mv = u8[mdhd.s]; const timescale = mv === 1 ? u32(mdhd.s + 20) : u32(mdhd.s + 12);
+    const stbl = path(trak, 'mdia', 'minf', 'stbl');
+    const stsd = find(stbl.s, stbl.e, 'stsd'), ent = kids(stsd.s + 8, stsd.e)[0];
+    const fourcc = ent.t, width = u16(ent.s + 24), height = u16(ent.s + 26);
+    const cfgs = kids(ent.s + 78, ent.e), cfg = cfgs.find(c => ['avcC', 'hvcC', 'vpcC', 'av1C'].includes(c.t));
+    const description = cfg && (cfg.t === 'avcC' || cfg.t === 'hvcC' || cfg.t === 'av1C') ? u8.slice(cfg.s, cfg.e) : undefined;
+    const hex = (v, n = 2) => v.toString(16).toUpperCase().padStart(n, '0');
+    let codec = fourcc;
+    if (cfg && cfg.t === 'avcC') codec = 'avc1.' + hex(u8[cfg.s + 1]) + hex(u8[cfg.s + 2]) + hex(u8[cfg.s + 3]);
+    else if (cfg && cfg.t === 'hvcC') { const c = cfg.s, ps = u8[c + 1], space = ['', 'A', 'B', 'C'][ps >> 6], tier = (ps >> 5) & 1 ? 'H' : 'L', prof = ps & 31;
+      let comp = dv.getUint32(c + 2), rev = 0; for (let i = 0; i < 32; i++) { rev = (rev << 1) | (comp & 1); comp >>>= 1; } rev >>>= 0;
+      const lvl = u8[c + 12]; const cons = []; for (let i = 0; i < 6; i++) cons.push(u8[c + 6 + i]); while (cons.length && cons[cons.length - 1] === 0) cons.pop();
+      codec = [fourcc === 'hev1' ? 'hev1' : 'hvc1', space + prof, rev.toString(16).toUpperCase(), tier + lvl].concat(cons.map(x => x.toString(16).toUpperCase())).join('.'); }
+    else if (cfg && cfg.t === 'vpcC') { const c = cfg.s + 4; codec = `vp09.${String(u8[c]).padStart(2, '0')}.${String(u8[c + 1]).padStart(2, '0')}.${String(u8[c + 2] >> 4).padStart(2, '0')}`; }
+    else if (cfg && cfg.t === 'av1C') { const c = cfg.s; const prof = u8[c + 1] >> 5, lvl = u8[c + 1] & 31, tier = (u8[c + 2] >> 7) ? 'H' : 'M', hb = (u8[c + 2] >> 6) & 1, tw = (u8[c + 2] >> 5) & 1; codec = `av01.${prof}.${String(lvl).padStart(2, '0')}${tier}.${hb ? (tw ? '12' : '10') : '08'}`; }
+    // colour tags (nclx), so HDR clips get the same tone mapping the browser's player gives them
+    let colorSpace; const colr = cfgs.find(c => c.t === 'colr');
+    if (colr && type(colr.s) === 'nclx') { const P = { 1: 'bt709', 5: 'bt470bg', 6: 'smpte170m', 9: 'bt2020', 12: 'smpte432' }, T = { 1: 'bt709', 6: 'smpte170m', 8: 'linear', 13: 'iec61966-2-1', 16: 'pq', 18: 'hlg' }, M = { 0: 'rgb', 1: 'bt709', 5: 'bt470bg', 6: 'smpte170m', 9: 'bt2020-ncl' };
+      const pr = u16(colr.s + 4), tf = u16(colr.s + 6), mx = u16(colr.s + 8), fr = !!(u8[colr.s + 10] >> 7);
+      colorSpace = { primaries: P[pr] || null, transfer: T[tf] || null, matrix: M[mx] || null, fullRange: fr }; }
+    const tbl = t => find(stbl.s, stbl.e, t);
+    const stsz = tbl('stsz'), fixed = u32(stsz.s + 4), n = u32(stsz.s + 8), sizes = new Uint32Array(n); for (let i = 0; i < n; i++) sizes[i] = fixed || u32(stsz.s + 12 + i*4);
+    const co = tbl('stco') || tbl('co64'), nc = u32(co.s + 4), chunk = []; for (let i = 0; i < nc; i++) chunk.push(co.t === 'co64' ? Number(dv.getBigUint64(co.s + 8 + i*8)) : u32(co.s + 8 + i*4));
+    const stsc = tbl('stsc'), ns = u32(stsc.s + 4), sc = []; for (let i = 0; i < ns; i++) sc.push([u32(stsc.s + 8 + i*12), u32(stsc.s + 12 + i*12)]);
+    const offs = new Float64Array(n); { let si = 0; for (let ci = 0; ci < nc && si < n; ci++) { let per = sc[0][1]; for (const [first, spc] of sc) if (ci + 1 >= first) per = spc; let o = chunk[ci]; for (let k = 0; k < per && si < n; k++) { offs[si] = o; o += sizes[si]; si++; } } }
+    const stts = tbl('stts'), dts = new Float64Array(n); { let t = 0, si = 0; for (let i = 0, m = u32(stts.s + 4); i < m; i++) { const cnt = u32(stts.s + 8 + i*8), d = u32(stts.s + 12 + i*8); for (let k = 0; k < cnt && si < n; k++) { dts[si++] = t; t += d; } } }
+    const cts = Float64Array.from(dts); const ctts = tbl('ctts');
+    if (ctts) { const v = u8[ctts.s]; let si = 0; for (let i = 0, m = u32(ctts.s + 4); i < m; i++) { const cnt = u32(ctts.s + 8 + i*8), off = v === 1 ? dv.getInt32(ctts.s + 12 + i*8) : u32(ctts.s + 12 + i*8); for (let k = 0; k < cnt && si < n; k++) cts[si++] += off; } }
+    const stss = tbl('stss'), key = new Uint8Array(n); if (stss) { for (let i = 0, m = u32(stss.s + 4); i < m; i++) key[u32(stss.s + 8 + i*4) - 1] = 1; } else key.fill(1);
+    let c0 = Infinity; for (let i = 0; i < n; i++) c0 = Math.min(c0, cts[i]);
+    const samples = []; for (let i = 0; i < n; i++) samples.push({ i, off: offs[i], size: sizes[i], key: !!key[i], t: (cts[i] - c0)/timescale, dur: i + 1 < n ? (dts[i+1] - dts[i])/timescale : 0 });
+    const durTotal = n ? (dts[n-1] - dts[0])/timescale + (samples[n-2] ? samples[n-2].dur : 0) : 0;
+    return { codec, fourcc, width, height, rotation, description, colorSpace, samples, fps: n > 1 ? (n - 1)/((dts[n-1] - dts[0])/timescale) : 30, duration: durTotal };
+  }
+  throw new Error('no video track');
+}
+
+// sequential frame reader on top of WebCodecs; frameAt(t) draws the frame showing at time t into a canvas the size the video displays at
+function makeFrameReader(file, info) {
+  const S = info.samples, byT = S.slice().sort((a, b) => a.t - b.t);
+  const rot = ((info.rotation % 360) + 360) % 360, sideways = rot === 90 || rot === 270;
+  const cv = document.createElement('canvas'); cv.width = sideways ? info.height : info.width; cv.height = sideways ? info.width : info.height;
+  const cx = cv.getContext('2d', { willReadFrequently: true });
+  let dec = null, next = 0, got = new Map(), err = null, gen = 0;
+  const reset = kf => { if (dec) { try { dec.close(); } catch {} } for (const f of got.values()) f.close(); got = new Map(); err = null; const g = ++gen;
+    dec = new VideoDecoder({ output: f => { if (g !== gen) { f.close(); return; } got.set(Math.round(f.timestamp/1000), f); if (got.size > 24) { const k = Math.min(...got.keys()); got.get(k).close(); got.delete(k); } }, error: e => { err = e; } });
+    dec.configure({ codec: info.codec, codedWidth: info.width, codedHeight: info.height, description: info.description, ...(info.colorSpace ? { colorSpace: info.colorSpace } : {}) }); next = kf; };
+  const read = async s => new Uint8Array(await file.slice(s.off, s.off + s.size).arrayBuffer());
+  async function frameAt(t) {
+    let k = 0; for (let i = 0; i < byT.length; i++) { if (byT[i].t <= t + 1e-4) k = i; else break; }
+    const s = byT[k], ms = Math.round(s.t*1e3);
+    if (got.has(ms)) return draw(got.get(ms), ms);
+    let kf = s.i; while (kf > 0 && !S[kf].key) kf--;
+    if (!dec || dec.state !== 'configured' || next > s.i + 32 || kf > next) reset(kf);
+    let fed = 0;
+    for (let spin = 0; spin < 4000; spin++) {
+      if (err) throw err;
+      if (got.has(ms)) return draw(got.get(ms), ms);
+      if (next < S.length && (next <= s.i + 16) && dec.decodeQueueSize < 6) { const q = S[next]; dec.decode(new EncodedVideoChunk({ type: q.key ? 'key' : 'delta', timestamp: Math.round(q.t*1e6), duration: Math.round(q.dur*1e6), data: await read(q) })); next++; fed++; continue; }
+      if (next >= S.length || next > s.i + 16) { await dec.flush(); if (got.has(ms)) return draw(got.get(ms), ms); reset(kf); if (spin > 2000) break; continue; }
+      await new Promise(r => setTimeout(r, 2));
+    }
+    throw new Error('frame not decoded');
+  }
+  function draw(f, ms) {
+    cx.save(); cx.setTransform(1, 0, 0, 1, 0, 0);
+    if (rot === 90) { cx.translate(cv.width, 0); cx.rotate(Math.PI/2); }
+    else if (rot === 180) { cx.translate(cv.width, cv.height); cx.rotate(Math.PI); }
+    else if (rot === 270) { cx.translate(0, cv.height); cx.rotate(-Math.PI/2); }
+    cx.drawImage(f, 0, 0, info.width, info.height); cx.restore();
+    for (const [k, v] of got) if (k < ms) { v.close(); got.delete(k); }
+    return cv;
+  }
+  return { canvas: cv, frameAt, close: () => { if (dec) try { dec.close(); } catch {} for (const f of got.values()) f.close(); got.clear(); } };
+}
+
 /* SwingLab core: pure motion analysis. Works on normalized frames:
    units = body height (H), +x = toward the pitcher / plate (forward), y down, ground at y = 0. */
 const NJ = 17;
@@ -809,7 +899,12 @@ function bgModel(frames, w, h) {
     const o = y*w + x, gx = (g[o-w+1] + 2*g[o+1] + g[o+w+1]) - (g[o-w-1] + 2*g[o-1] + g[o+w-1]), gy = (g[o+w-1] + 2*g[o+w] + g[o+w+1]) - (g[o-w-1] + 2*g[o-w] + g[o-w+1]);
     e[o] = Math.hypot(gx, gy);
   }
-  return { w, h, lab: toLab(bg, n), edge: maxFilter(e, w, h, 1) };
+  // contrast of this clip: how far a busy frame strays from the background (98th percentile). Clips come out of
+  // different decoders and HDR tone maps brighter or flatter, so the thresholds below scale with it.
+  const lab = toLab(bg, n), p98 = [];
+  for (const fr of frames) { const L = toLab(fr, n), d = []; for (let i = 0; i < n; i += 7) d.push(Math.hypot(L[i*3] - lab[i*3], L[i*3+1] - lab[i*3+1], L[i*3+2] - lab[i*3+2])); p98.push(percentile(d, 0.98)); }
+  const gain = clamp(42/Math.max(1e-3, percentile(p98, 0.5)), 0.6, 2.5);
+  return { w, h, lab, edge: maxFilter(e, w, h, 1), gain };
 }
 function maxFilter(a, w, h, r) {
   const t = new Float32Array(a.length), o = new Float32Array(a.length);
@@ -819,25 +914,26 @@ function maxFilter(a, w, h, r) {
 }
 // 0..1 foreground; tolerant of a pixel of camera shake; static edges of the scene never count
 function fgMap(rgb, B) {
-  const { w, h } = B, n = w*h, L = toLab(rgb, n), bl = B.lab, out = new Float32Array(n);
+  const { w, h } = B, n = w*h, L = toLab(rgb, n), bl = B.lab, out = new Float32Array(n), g = B.gain || 1;
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const o = y*w + x; let best = 1e9;
     for (let dy = -1; dy <= 1; dy++) { const yy = y + dy; if (yy < 0 || yy >= h) continue;
       for (let dx = -1; dx <= 1; dx++) { const xx = x + dx; if (xx < 0 || xx >= w) continue; const q = (yy*w + xx)*3;
         const a = L[o*3] - bl[q], b = L[o*3+1] - bl[q+1], c = L[o*3+2] - bl[q+2]; const d = a*a + b*b + c*c; if (d < best) best = d; } }
-    out[o] = clamp((Math.sqrt(best) - 10)/14, 0, 1)*clamp(1 - B.edge[o]/60, 0, 1);
+    out[o] = clamp((Math.sqrt(best)*g - 10)/14, 0, 1)*clamp(1 - B.edge[o]*g/60, 0, 1);
   }
   return out;
 }
 // per-angle bat score from the foreground (72 bins); hx,hy and elbows in these image pixels; Lmax in these pixels
-function fgBatScores(fg, gray, w, h, hx, hy, Lmax, elbows) {
+const FG_REACH = [1, 0.02]; // knob search around the tracked hands: steps of 6 px (at 360 wide), penalty per px
+function fgBatScores(fg, gray, w, h, hx, hy, Lmax, elbows, reach = FG_REACH[0], gain = 1) {
   const s = w/360, nr = 40, LBV = [0.08, 0.25, 0.42, 0.58, 0.74, 0.88, 1.0], LBF = LBV.map(v => Math.max(0, Math.round(v*nr) - 1)), bestL = new Float32Array(NA).fill(1);
   const fgd = maxFilter(fg, w, h, Math.max(1, Math.round(2*s)));
   const at = (a, x, y) => { const xi = Math.round(x), yi = Math.round(y); if (xi < 0 || yi < 0 || xi >= w || yi >= h) return 0; return a[yi*w + xi]; };
   const atG = (x, y) => { const xi = clamp(Math.round(x), 0, w - 1), yi = clamp(Math.round(y), 0, h - 1); return gray[yi*w + xi]; };
   const best = new Float32Array(NA).fill(-1e9), stepO = 6*s, dE = 3*s, tR = 0.15, tE = 0.15;
-  for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
-    const x0 = hx + ox*stepO, y0 = hy + oy*stepO, pen = 0.02*Math.hypot(ox, oy)*6;
+  for (let oy = -reach; oy <= reach; oy++) for (let ox = -reach; ox <= reach; ox++) {
+    const x0 = hx + ox*stepO, y0 = hy + oy*stepO, pen = FG_REACH[1]*Math.hypot(ox, oy)*6;
     const arm = elbows.map(([ex, ey]) => ({ a: Math.atan2(ey - y0, ex - x0), d: Math.hypot(ex - x0, ey - y0)*1.15 }));
     for (let a = 0; a < NA; a++) {
       const ang = a*5*Math.PI/180, cx = Math.cos(ang), cy = Math.sin(ang);
@@ -852,7 +948,7 @@ function fgBatScores(fg, gray, w, h, hx, hy, Lmax, elbows) {
           const c = at(fg, x, y), s1 = at(fg, x - cy*off, y + cx*off), s2 = at(fg, x + cy*off, y - cx*off);
           const ridge = Math.max(0, c - Math.max(s1, s2));
           const g = atG(x, y), g1 = atG(x - cy*dE, y + cx*dE), g2 = atG(x + cy*dE, y - cx*dE);
-          const edge = Math.min(1.5, Math.max(0, Math.abs(g - (g1 + g2)/2) - Math.abs(g1 - g2)*0.5)/40)*at(fgd, x, y);
+          const edge = Math.min(1.5, Math.max(0, Math.abs(g - (g1 + g2)/2) - Math.abs(g1 - g2)*0.5)*gain/40)*at(fgd, x, y);
           v = (ridge - tR) + (edge - tE);
         }
         cs += v;
@@ -1479,7 +1575,7 @@ function addBatSpeed(seq) {
   seq.batOk = ok > 0.55;
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { NJ, JN, sideMap, cleanRaw, unifyHands, detectSides, normalize, toPixel, solveBat, solveBat2, refineBat, swingWindow, bgModel, fgMap, fgBatScores, BAT_W, detectPhases, analyzeMotion, packRecord, seqFromRecord, alignIndex, lerpFrame, compareRecords, buildDemo, buildPro, buildFaulty, buildModel, MODELS, addBatSpeed, barrelZone, NA, angAt, P, mid, gauss1d, deriv, speedSeries };
+if (typeof module !== 'undefined' && module.exports) module.exports = { NJ, JN, sideMap, cleanRaw, unifyHands, detectSides, normalize, toPixel, solveBat, solveBat2, refineBat, swingWindow, bgModel, fgMap, fgBatScores, FG_REACH, BAT_W, detectPhases, analyzeMotion, packRecord, seqFromRecord, alignIndex, lerpFrame, compareRecords, buildDemo, buildPro, buildFaulty, buildModel, MODELS, addBatSpeed, barrelZone, NA, angAt, P, mid, gauss1d, deriv, speedSeries };
 
 </script>
 <script>
@@ -1597,7 +1693,20 @@ function drawCrop(x, src, crop, s) {
 }
 const gcv = document.createElement('canvas'); const gx = gcv.getContext('2d', { willReadFrequently: true });
 function waitEvt(el, ev, ms = 4000) { return new Promise(res => { let t; const h = () => { clearTimeout(t); el.removeEventListener(ev, h); res(true); }; el.addEventListener(ev, h); t = setTimeout(() => { el.removeEventListener(ev, h); res(false); }, ms); }); }
-async function seek(t) { if (Math.abs(vid.currentTime - t) < 1e-4) return; const p = waitEvt(vid, 'seeked', 3000); vid.currentTime = t; await p; }
+// where the tracker reads pixels: the video element, or our own decoder when the browser locks the video's pixels (some HDR/HEVC phone clips)
+let reader = null;
+const asrc = () => reader ? reader.canvas : vid;
+function pixelsLocked() { try { const c = document.createElement('canvas'); c.width = c.height = 2; const x = c.getContext('2d'); x.drawImage(vid, 0, 0, 2, 2); x.getImageData(0, 0, 1, 1); return false; } catch { return true; } }
+async function openReader(file) {
+  const fix = 'In your camera settings, turn off HDR10+ video (and High efficiency video if you see it), record again, and upload that clip.';
+  if (!('VideoDecoder' in window)) throw new Error('This browser locks the pixels of this video, so the tracker cannot read it. Update Chrome, or: ' + fix);
+  if (file.size > 600e6) throw new Error('This video is too large to decode here. Trim it to the swing, or: ' + fix);
+  let info; try { info = mp4Demux(await file.arrayBuffer()); } catch { throw new Error('This video\'s pixels are locked and its format could not be read. ' + fix); }
+  let ok = false; try { ok = (await VideoDecoder.isConfigSupported({ codec: info.codec, codedWidth: info.width, codedHeight: info.height, description: info.description })).supported; } catch {}
+  if (!ok) throw new Error(`This phone cannot decode this video (${info.codec.split('.')[0]}) for tracking. ` + fix);
+  const r = makeFrameReader(file, info); r.info = info; await r.frameAt(0); return r;
+}
+async function seek(t) { if (reader) { await reader.frameAt(t); return; } if (Math.abs(vid.currentTime - t) < 1e-4) return; const p = waitEvt(vid, 'seeked', 3000); vid.currentTime = t; await p; }
 const LR = [[1, 2], [3, 4], [5, 6], [7, 8], [9, 10], [11, 12], [13, 14], [15, 16]];
 async function runPose(crop, src = vid, net = model) {
   const s = net === nets.precise ? 256 : 192, { c, x } = canFor(s);
@@ -1652,16 +1761,16 @@ async function detectAt(src, crop) {
 const bodyBox = k => { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, c = 0; for (let j = 0; j < 17; j++) if (k[j*3+2] > 0.3) { c++; x0 = Math.min(x0, k[j*3]); x1 = Math.max(x1, k[j*3]); y0 = Math.min(y0, k[j*3+1]); y1 = Math.max(y1, k[j*3+1]); } return c >= 6 ? { x: (x0+x1)/2, y: (y0+y1)/2, w: x1 - x0, h: y1 - y0 } : null; };
 // one tracked frame: pose in the crop that follows the player; if the pose jumps or fades, re-find the same player with the detector
 async function trackFrame(W, H, tr, net) {
-  let r = await poseAt(W, H, tr.crop, vid, net);
+  let r = await poseAt(W, H, tr.crop, asrc(), net);
   const bb = bodyBox(r.k), ref = tr.box;
   const jumped = bb && ref && Math.hypot(bb.x - ref.x, bb.y - ref.y) > 0.45*Math.max(ref.h, ref.w);
   if ((r.score < 0.32 || !bb || jumped) && nets.det) {
     const side = ref ? Math.max(ref.h, ref.w)*3 : Math.max(W, H);
     const search = ref ? { x: ref.x - side/2, y: ref.y - side/2, s: side } : { x: (W - side)/2, y: (H - side)/2, s: side };
-    const dd = await detectAt(vid, search);
+    const dd = await detectAt(asrc(), search);
     if (dd && dd.people.length) {
       const pick = ref ? dd.people.slice().sort((p, q) => Math.hypot(p.x - ref.x, p.y - ref.y) - Math.hypot(q.x - ref.x, q.y - ref.y))[0] : dd.people.slice().sort((p, q) => q.w*q.h - p.w*p.h)[0];
-      const s = Math.max(pick.w, pick.h)*1.3, r2 = await runPose({ x: pick.x - s/2, y: pick.y - s/2, s }, vid, net);
+      const s = Math.max(pick.w, pick.h)*1.3, r2 = await runPose({ x: pick.x - s/2, y: pick.y - s/2, s }, asrc(), net);
       const b2 = bodyBox(r2.k);
       if (r2.score > r.score*0.9 || jumped) { r = { ...r2, crop: r2.score > 0.25 ? cropFrom(r2.k, W, H) : null }; }
       if (b2) tr.box = b2;
@@ -1681,7 +1790,7 @@ function grabGray(W, H) { return grabFrame(W, H).gray; }
 function grabFrame(W, H) {
   const GH = Math.round(H*GW/W);
   if (gcv.width !== GW || gcv.height !== GH) { gcv.width = GW; gcv.height = GH; }
-  gx.drawImage(vid, 0, 0, GW, GH);
+  gx.drawImage(asrc(), 0, 0, GW, GH);
   const im = gx.getImageData(0, 0, GW, GH).data, n = GW*GH, g = new Uint8Array(n), rgb = new Uint8Array(n*3);
   for (let i = 0; i < n; i++) { const r = im[i*4], gg = im[i*4+1], b = im[i*4+2]; rgb[i*3] = r; rgb[i*3+1] = gg; rgb[i*3+2] = b; g[i] = (77*r + 150*gg + 29*b) >> 8; }
   return { gray: g, rgb, w: GW, h: GH };
@@ -1770,6 +1879,8 @@ async function analyzeFile(file, opts = {}) {
     if (!Number.isFinite(vid.duration) || vid.duration <= 0) { // clips recorded in the browser often report no length until seeked to the end
       const p = waitEvt(vid, 'durationchange', 3000); try { vid.currentTime = 1e7; } catch {} await p; await seek(0);
     }
+    if (reader) { reader.close(); reader = null; }
+    if (window.__forceDecode || pixelsLocked()) { msg('This video keeps its pixels locked. Decoding it directly…', 0.02); reader = await openReader(file); }
     const vdur = Number.isFinite(vid.duration) && vid.duration > 0 ? vid.duration : (opts.duration || 0);
     if (!vdur) throw new Error('This video has no readable length. Try recording again or upload it from your library.');
     sizeStage();
@@ -1781,7 +1892,7 @@ async function analyzeFile(file, opts = {}) {
     // lock on: the biggest person in the first frame is the player
     const tr = { crop: null, box: null };
     await seek(Math.min(dur*0.1, 0.2*slow));
-    if (nets.det) { const side = Math.max(W, H), dd = await detectAt(vid, { x: (W - side)/2, y: (H - side)/2, s: side }); if (dd && dd.people.length) { const p = dd.people.slice().sort((a, b) => b.w*b.h - a.w*a.h)[0]; tr.box = { x: p.x, y: p.y, w: p.w, h: p.h }; const s = Math.max(p.w, p.h)*1.3; tr.crop = { x: p.x - s/2, y: p.y - s/2, s }; } }
+    if (nets.det) { const side = Math.max(W, H), dd = await detectAt(asrc(), { x: (W - side)/2, y: (H - side)/2, s: side }); if (dd && dd.people.length) { const p = dd.people.slice().sort((a, b) => b.w*b.h - a.w*a.h)[0]; tr.box = { x: p.x, y: p.y, w: p.w, h: p.h }; const s = Math.max(p.w, p.h)*1.3; tr.crop = { x: p.x - s/2, y: p.y - s/2, s }; } }
     if (realDur > 3.6) {
       // coarse pass: find the moment of fastest hand movement
       const step = slow/6, ts = [], ks = []; const ctr = { ...tr };
@@ -1796,7 +1907,7 @@ async function analyzeFile(file, opts = {}) {
       tA = Math.max(0, pk - pre); tB = Math.min(dur, pk + post);
     }
     msg('Reading the frame rate…', 0.28);
-    const nativeFps = await probeFps();
+    const nativeFps = reader ? clamp(Math.round(reader.info.fps), 24, 240) : await probeFps();
     // every frame the video has, up to ~200 frames for the swing window
     const mstep = Math.max(1/nativeFps, (tB - tA)/200), perReal = slow/mstep;
     // aim at the middle of each video frame: seeking right onto a frame boundary shows the frame before it on some browsers, which shifts and jitters everything by a frame
@@ -1809,7 +1920,7 @@ async function analyzeFile(file, opts = {}) {
       const r = await trackFrame(W, H, tr, net); raw.push(r.k); if (r.score > 0.3) found++;
       if (kind === 'hit' && nets.det && r.score > 0.25) {
         const hx = (r.k[27] + r.k[30])/2, hy = (r.k[28] + r.k[31])/2, bh = tr.box ? Math.max(tr.box.h, tr.box.w) : Math.max(W, H)*0.5, s = bh*1.35;
-        dets.push(await detectAt(vid, { x: hx - s/2, y: hy - s/2, s }));
+        dets.push(await detectAt(asrc(), { x: hx - s/2, y: hy - s/2, s }));
       } else dets.push(null);
       drawLive(r.k, W, H);
       msg('Tracking joints' + (kind === 'hit' ? ' and bat' : '') + '… frame ' + (i+1) + ' of ' + times.length, 0.3 + 0.62*(i+1)/times.length);
@@ -1853,9 +1964,9 @@ async function analyzeFile(file, opts = {}) {
       for (let i = 0; i < scores.length; i++) {
         if (!fgs[i] || (firstFast >= 0 && i < firstFast - Math.round(0.1*perReal))) continue;
         const k = clean[i], fg = Float32Array.from(fgs[i], v => v/255), hx = (k[27] + k[30])/2*gsc, hy = (k[28] + k[31])/2*gsc;
-        scores[i] = fgBatScores(fg, grays[i], GW, GHh, hx, hy, L*1.25*gsc, [[k[21]*gsc, k[22]*gsc], [k[24]*gsc, k[25]*gsc]]);
+        scores[i] = fgBatScores(fg, grays[i], GW, GHh, hx, hy, L*1.25*gsc, [[k[21]*gsc, k[22]*gsc], [k[24]*gsc, k[25]*gsc]], undefined, bgm.gain);
       }
-      st.batCtx = { dbg: { fgFrom, bg: !!bgm, used: fgs.map(Boolean) }, scores, allow, hsp: hsS, clean, hands: clean.map(k => [(k[27] + k[30])/2, (k[28] + k[31])/2]), L, nz, anchors: {}, taps: [] };
+      st.batCtx = { dbg: { fgFrom, bg: !!bgm, gain: bgm && bgm.gain, used: fgs.map(Boolean) }, scores, allow, hsp: hsS, clean, hands: clean.map(k => [(k[27] + k[30])/2, (k[28] + k[31])/2]), L, nz, anchors: {}, taps: [] };
       applyBatPath(seq);
     } else st.batCtx = null;
     // which side leads and where the pitcher is, from the motion itself
@@ -1875,7 +1986,7 @@ async function analyzeFile(file, opts = {}) {
   } catch (e) {
     if (e.message === 'cancel') { loadDemo(); toast('Analysis canceled.'); }
     else { loadDemo(); toast(e.message || 'Something went wrong while analyzing.'); }
-  } finally { proc.hidden = true; st.busy = false; }
+  } finally { proc.hidden = true; st.busy = false; if (reader) { reader.close(); reader = null; } }
 }
 function drawLive(k, W, H) {
   const { ctx, w, h } = canvasCtx(); ctx.clearRect(0, 0, w, h);

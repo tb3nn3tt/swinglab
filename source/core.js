@@ -264,7 +264,12 @@ function bgModel(frames, w, h) {
     const o = y*w + x, gx = (g[o-w+1] + 2*g[o+1] + g[o+w+1]) - (g[o-w-1] + 2*g[o-1] + g[o+w-1]), gy = (g[o+w-1] + 2*g[o+w] + g[o+w+1]) - (g[o-w-1] + 2*g[o-w] + g[o-w+1]);
     e[o] = Math.hypot(gx, gy);
   }
-  return { w, h, lab: toLab(bg, n), edge: maxFilter(e, w, h, 1) };
+  // contrast of this clip: how far a busy frame strays from the background (98th percentile). Clips come out of
+  // different decoders and HDR tone maps brighter or flatter, so the thresholds below scale with it.
+  const lab = toLab(bg, n), p98 = [];
+  for (const fr of frames) { const L = toLab(fr, n), d = []; for (let i = 0; i < n; i += 7) d.push(Math.hypot(L[i*3] - lab[i*3], L[i*3+1] - lab[i*3+1], L[i*3+2] - lab[i*3+2])); p98.push(percentile(d, 0.98)); }
+  const gain = clamp(42/Math.max(1e-3, percentile(p98, 0.5)), 0.6, 2.5);
+  return { w, h, lab, edge: maxFilter(e, w, h, 1), gain };
 }
 function maxFilter(a, w, h, r) {
   const t = new Float32Array(a.length), o = new Float32Array(a.length);
@@ -274,25 +279,26 @@ function maxFilter(a, w, h, r) {
 }
 // 0..1 foreground; tolerant of a pixel of camera shake; static edges of the scene never count
 function fgMap(rgb, B) {
-  const { w, h } = B, n = w*h, L = toLab(rgb, n), bl = B.lab, out = new Float32Array(n);
+  const { w, h } = B, n = w*h, L = toLab(rgb, n), bl = B.lab, out = new Float32Array(n), g = B.gain || 1;
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const o = y*w + x; let best = 1e9;
     for (let dy = -1; dy <= 1; dy++) { const yy = y + dy; if (yy < 0 || yy >= h) continue;
       for (let dx = -1; dx <= 1; dx++) { const xx = x + dx; if (xx < 0 || xx >= w) continue; const q = (yy*w + xx)*3;
         const a = L[o*3] - bl[q], b = L[o*3+1] - bl[q+1], c = L[o*3+2] - bl[q+2]; const d = a*a + b*b + c*c; if (d < best) best = d; } }
-    out[o] = clamp((Math.sqrt(best) - 10)/14, 0, 1)*clamp(1 - B.edge[o]/60, 0, 1);
+    out[o] = clamp((Math.sqrt(best)*g - 10)/14, 0, 1)*clamp(1 - B.edge[o]*g/60, 0, 1);
   }
   return out;
 }
 // per-angle bat score from the foreground (72 bins); hx,hy and elbows in these image pixels; Lmax in these pixels
-function fgBatScores(fg, gray, w, h, hx, hy, Lmax, elbows) {
+const FG_REACH = [1, 0.02]; // knob search around the tracked hands: steps of 6 px (at 360 wide), penalty per px
+function fgBatScores(fg, gray, w, h, hx, hy, Lmax, elbows, reach = FG_REACH[0], gain = 1) {
   const s = w/360, nr = 40, LBV = [0.08, 0.25, 0.42, 0.58, 0.74, 0.88, 1.0], LBF = LBV.map(v => Math.max(0, Math.round(v*nr) - 1)), bestL = new Float32Array(NA).fill(1);
   const fgd = maxFilter(fg, w, h, Math.max(1, Math.round(2*s)));
   const at = (a, x, y) => { const xi = Math.round(x), yi = Math.round(y); if (xi < 0 || yi < 0 || xi >= w || yi >= h) return 0; return a[yi*w + xi]; };
   const atG = (x, y) => { const xi = clamp(Math.round(x), 0, w - 1), yi = clamp(Math.round(y), 0, h - 1); return gray[yi*w + xi]; };
   const best = new Float32Array(NA).fill(-1e9), stepO = 6*s, dE = 3*s, tR = 0.15, tE = 0.15;
-  for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
-    const x0 = hx + ox*stepO, y0 = hy + oy*stepO, pen = 0.02*Math.hypot(ox, oy)*6;
+  for (let oy = -reach; oy <= reach; oy++) for (let ox = -reach; ox <= reach; ox++) {
+    const x0 = hx + ox*stepO, y0 = hy + oy*stepO, pen = FG_REACH[1]*Math.hypot(ox, oy)*6;
     const arm = elbows.map(([ex, ey]) => ({ a: Math.atan2(ey - y0, ex - x0), d: Math.hypot(ex - x0, ey - y0)*1.15 }));
     for (let a = 0; a < NA; a++) {
       const ang = a*5*Math.PI/180, cx = Math.cos(ang), cy = Math.sin(ang);
@@ -307,7 +313,7 @@ function fgBatScores(fg, gray, w, h, hx, hy, Lmax, elbows) {
           const c = at(fg, x, y), s1 = at(fg, x - cy*off, y + cx*off), s2 = at(fg, x + cy*off, y - cx*off);
           const ridge = Math.max(0, c - Math.max(s1, s2));
           const g = atG(x, y), g1 = atG(x - cy*dE, y + cx*dE), g2 = atG(x + cy*dE, y - cx*dE);
-          const edge = Math.min(1.5, Math.max(0, Math.abs(g - (g1 + g2)/2) - Math.abs(g1 - g2)*0.5)/40)*at(fgd, x, y);
+          const edge = Math.min(1.5, Math.max(0, Math.abs(g - (g1 + g2)/2) - Math.abs(g1 - g2)*0.5)*gain/40)*at(fgd, x, y);
           v = (ridge - tR) + (edge - tE);
         }
         cs += v;
@@ -769,4 +775,4 @@ function addBatSpeed(seq) {
   seq.batOk = ok > 0.55;
 }
 
-if (typeof module !== 'undefined') module.exports = { NJ, JN, sideMap, cleanRaw, unifyHands, detectSides, normalize, toPixel, solveBat, solveBat2, refineBat, swingWindow, bgModel, fgMap, fgBatScores, BAT_W, detectPhases, analyzeMotion, packRecord, seqFromRecord, alignIndex, lerpFrame, compareRecords, buildDemo, buildPro, buildFaulty, buildModel, MODELS, addBatSpeed, barrelZone, NA, angAt, P, mid, gauss1d, deriv, speedSeries };
+if (typeof module !== 'undefined') module.exports = { NJ, JN, sideMap, cleanRaw, unifyHands, detectSides, normalize, toPixel, solveBat, solveBat2, refineBat, swingWindow, bgModel, fgMap, fgBatScores, FG_REACH, BAT_W, detectPhases, analyzeMotion, packRecord, seqFromRecord, alignIndex, lerpFrame, compareRecords, buildDemo, buildPro, buildFaulty, buildModel, MODELS, addBatSpeed, barrelZone, NA, angAt, P, mid, gauss1d, deriv, speedSeries };
