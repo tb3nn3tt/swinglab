@@ -102,6 +102,15 @@ p { margin: 0; }
 .rec-btn.on i { width: 28px; height: 28px; border-radius: 6px; }
 .cam-delay { justify-self: end; display: flex; align-items: center; gap: 6px; font-size: 13.5px; }
 @media (prefers-reduced-motion: reduce) { .rec-btn i { transition: none; } }
+.zoom-reset { position: absolute; right: 10px; top: 10px; z-index: 3; border: 0; border-radius: 999px; padding: 6px 12px; font-size: 12.5px; font-weight: 600; background: rgba(232,180,74,.95); color: #1A1206; max-width: calc(100% - 140px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.moments { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x proximity; }
+.moment { flex: none; width: 148px; display: flex; flex-direction: column; gap: 4px; text-align: left; border: 1px solid var(--line); background: var(--surface-2); border-radius: 12px; padding: 6px 6px 10px; scroll-snap-align: start; }
+.moment canvas { width: 100%; aspect-ratio: 1 / 1; display: block; border-radius: 8px; background: var(--stage); }
+.moment.fix { border-color: color-mix(in srgb, var(--fix) 55%, var(--line)); }
+.moment.watch { border-color: color-mix(in srgb, var(--watch) 55%, var(--line)); }
+.moment .mt { font-weight: 600; font-size: 13.5px; line-height: 1.25; padding: 0 2px; }
+.moment .ms { font-size: 12.5px; color: var(--ink-2); padding: 0 2px; display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.moment .mtime { font-family: var(--f-mono); font-size: 11px; color: var(--ink-2); padding: 0 2px; font-variant-numeric: tabular-nums; }
 .pick-file { position: relative; overflow: hidden; cursor: pointer; }
 .pick-file input[type=file] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font-size: 200px; z-index: 2; }
 .pick-file:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -313,6 +322,7 @@ i.dot.good { background: var(--good); } i.dot.watch { background: var(--watch); 
             <video id="vid" playsinline muted preload="auto"></video>
             <canvas id="cv"></canvas>
             <div class="hud"><span class="ph" id="hudPhase">Stance</span><span id="hudTime">0 ms</span></div>
+            <button class="zoom-reset" id="zoomReset" type="button" hidden>Reset zoom</button>
             <div class="proc" id="proc" hidden>
               <div class="proc-row"><span id="procTxt">Loading tracker…</span><button id="procCancel">Cancel</button></div>
               <div class="bar"><i id="procBar"></i></div>
@@ -337,6 +347,7 @@ i.dot.good { background: var(--good); } i.dot.watch { background: var(--watch); 
               <button class="chip" data-layer="energy" aria-pressed="false">Energy flow</button>
               <button class="chip" data-layer="ideal" aria-pressed="true"><i class="sw" style="background:var(--ghost)"></i>Fixed form</button>
               <button class="chip" data-layer="past" aria-pressed="true"><i class="sw" style="background:var(--past)"></i>Past rep</button>
+              <button class="chip" id="zoomFollow" aria-pressed="false">Follow player (zoom)</button>
             </div>
             <div class="legend" id="legend"></div>
           </div>

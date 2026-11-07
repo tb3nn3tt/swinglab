@@ -180,7 +180,7 @@ async function trackFrame(W, H, tr, net) {
 }
 /* bat: brightness edges + motion along rays from the hands, boosted where the detector sees a bat */
 const batState = { prev: null, lens: [] };
-function batScores(k, W, H, dets) {
+function batScores(k, W, H, dets, quiet) {
   const GW = 256, sc = GW / W, GH = Math.round(H*sc);
   if (gcv.width !== GW || gcv.height !== GH) { gcv.width = GW; gcv.height = GH; batState.prev = null; }
   gx.drawImage(vid, 0, 0, GW, GH);
@@ -193,6 +193,7 @@ function batScores(k, W, H, dets) {
   const Hg = Math.max(20, (((k[45+1] + k[48+1])/2) - k[1]) / 0.88 * sc);
   const out = new Float32Array(NA); const r0 = 0.07*Hg, r1 = 0.5*Hg, d = Math.max(2, 0.035*Hg), steps = 22;
   const limb = [7, 8, 5, 6].map(j => Math.atan2(k[j*3+1]*sc - hy, k[j*3]*sc - hx));
+  const body = [[11, 12], ...(quiet ? [[13, 14], [15, 16]] : [])].map(([a, b]) => Math.atan2((k[a*3+1] + k[b*3+1])/2*sc - hy, (k[a*3] + k[b*3])/2*sc - hx));
   for (let a = 0; a < NA; a++) {
     const ang = a*5*Math.PI/180, cx = Math.cos(ang), cy = Math.sin(ang), nx = -cy, ny = cx; let sum = 0, mot = 0;
     for (let s = 0; s < steps; s++) {
@@ -202,6 +203,9 @@ function batScores(k, W, H, dets) {
     }
     let v = sum/steps + 0.35*mot/steps;
     for (const ea of limb) { let dd = Math.abs(ang - ea); dd = Math.min(dd, 2*Math.PI - dd); if (dd < 0.3) v *= 0.35; }
+    for (const ea of body) { let dd = Math.abs(ang - ea); dd = Math.min(dd, 2*Math.PI - dd); if (dd < 0.45) v *= 0.2; }
+    // in the stance and load the bat is held up: the barrel is above the hands, never hanging down
+    if (quiet && Math.sin(ang) > -0.25) v *= 0.15;
     out[a] = v;
   }
   // detector boost: the bat's far end is the box corner farthest from the hands
@@ -287,13 +291,16 @@ async function analyzeFile(file, opts = {}) {
       // second look at each frame for the bat, now that the joints are cleaned up
       const scores = [];
       batState.prev = null;
+      const hs = clean.map((k, i) => { const p = clean[Math.max(0, i-1)]; return Math.hypot((k[27]+k[30])/2 - (p[27]+p[30])/2, (k[28]+k[31])/2 - (p[28]+p[31])/2)/nz.H; });
+      const hsS = gauss1d(hs, 2), quietTh = 0.012*(30/perReal)*slow;
+      // quiet = before the hands really start the swing (stance, load, stride)
+      const firstFast = hsS.findIndex(v => v > quietTh*2.5);
       for (let i = 0; i < times.length; i++) {
         if (st.cancel) throw new Error('cancel');
         await seek(times[i]);
-        scores.push(batScores(clean[i], W, H, dets[i]));
+        scores.push(batScores(clean[i], W, H, dets[i], (firstFast < 0 || i < firstFast) && hsS[i] < quietTh*2.5));
         msg('Following the bat… frame ' + (i+1) + ' of ' + times.length, 0.95 + 0.04*(i+1)/times.length);
       }
-      const hs = clean.map((k, i) => { const p = clean[Math.max(0, i-1)]; return Math.hypot((k[27]+k[30])/2 - (p[27]+p[30])/2, (k[28]+k[31])/2 - (p[28]+p[31])/2)/nz.H; });
       const allow = hs.map(v => 2 + 80*v*(30/perReal)*slow);
       const path = solveBat(scores, allow);
       const lens = batState.lens.slice().sort((a, b) => a - b);
@@ -345,6 +352,74 @@ function loadRecord(rec) {
   st.compareRec = null;
   afterAnalysis(true);
 }
+function computeBoxes() {
+  const F = st.seq.frames, tips = st.seq.batTips, n = F.length;
+  const raw = F.map((f, i) => { let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity; for (let j = 0; j < 17; j++) { x0 = Math.min(x0, f[j*2]); x1 = Math.max(x1, f[j*2]); y0 = Math.min(y0, f[j*2+1]); y1 = Math.max(y1, f[j*2+1]); } const t = tips && tips[i]; if (t && t.c > 0.3) { x0 = Math.min(x0, t.x); x1 = Math.max(x1, t.x); y0 = Math.min(y0, t.y); y1 = Math.max(y1, t.y); } return [x0 - 0.06, y0 - 0.06, x1 + 0.06, Math.max(y1, 0) + 0.04]; });
+  const sm = [0, 1, 2, 3].map(c => gauss1d(raw.map(b => b[c]), 4));
+  st.boxes = raw.map((_, i) => ({ x0: sm[0][i], y0: sm[1][i], x1: sm[2][i], y1: sm[3][i] }));
+}
+const ROI = {
+  hit: { head: 'head', headDrop: 'head', eyes: 'head', headTurn: 'head', stride: 'feet', frontFoot: 'feet', backFoot: 'feet', load: 'hands', cast: 'hands', dump: 'hands', ttc: 'hands',
+    leadKnee: 'leadLeg', backKnee: 'backLeg', tilt: 'torso', drift: 'torso', earlyOpen: 'torso', overRot: 'torso', seq: 'torso', balance: 'body' },
+  pitch: { lift: 'leadLeg', stride: 'feet', kneeFP: 'leadLeg', block: 'leadLeg', elbow: 'throwArm', armTiming: 'throwArm', trunk: 'torso', glove: 'gloveArm', release: 'throwArm', seq: 'torso' },
+};
+function roiJoints(area, S) {
+  return { head: [0, 1, 2, 3, 4, 5, 6], feet: [S.lAn, S.bAn, S.lKn, S.bKn], hands: [7, 8, 9, 10, S.bSh, S.lSh], leadLeg: [S.lHip, S.lKn, S.lAn], backLeg: [S.bHip, S.bKn, S.bAn],
+    torso: [0, 5, 6, 11, 12], body: [...Array(17).keys()], throwArm: [S.bSh, S.bEl, S.bWr, 0, 5, 6], gloveArm: [S.lSh, S.lEl, S.lWr, 5, 6] }[area] || [...Array(17).keys()];
+}
+function roiBox(i, area) {
+  const f = st.seq.frames[i], S = sideMap(st.seq.leadLeft), js = roiJoints(area, S);
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const j of js) { x0 = Math.min(x0, f[j*2]); x1 = Math.max(x1, f[j*2]); y0 = Math.min(y0, f[j*2+1]); y1 = Math.max(y1, f[j*2+1]); }
+  if (area === 'hands' && st.seq.batTips && st.seq.batTips[i] && st.seq.batTips[i].c > 0.3) { const t = st.seq.batTips[i]; x0 = Math.min(x0, t.x); x1 = Math.max(x1, t.x); y0 = Math.min(y0, t.y); y1 = Math.max(y1, t.y); }
+  const minS = area === 'body' ? 0.9 : area === 'head' ? 0.5 : 0.45, cx = (x0 + x1)/2, cy = (y0 + y1)/2, hw = Math.max(minS, x1 - x0 + 0.1)/2, hh = Math.max(minS, y1 - y0 + 0.1)/2;
+  return { x0: cx - hw, x1: cx + hw, y0: cy - hh, y1: cy + hh };
+}
+function keyMoments() {
+  const r = st.res, kind = r.kind, out = [];
+  for (const [name, i] of r.phases.list) out.push({ i, title: name, sub: 'Whole body', area: 'body', status: 'phase' });
+  for (const m of r.metrics) {
+    if (m.status !== 'fix' && m.status !== 'watch') continue;
+    const area = ROI[kind][m.key] || 'body', i = (r.phases.list.find(p => p[0] === m.phase) || [0, r.phases.key])[1];
+    out.push({ i, title: m.label, sub: m.key === 'seq' ? Math.round(m.value) + '% in order' : fmtShort(m.value, m.unit), area, status: m.status, key: m.key });
+  }
+  out.forEach(o => o.box = roiBox(o.i, o.area));
+  return out.sort((a, b) => a.i - b.i || (a.status === 'phase' ? -1 : 1));
+}
+let thumbToken = 0;
+async function buildMomentThumbs() {
+  const my = ++thumbToken, list = st.moments || []; if (!list.length) return;
+  const wasT = vid.currentTime;
+  for (let k = 0; k < list.length; k++) {
+    if (my !== thumbToken || st.busy) return;
+    const el = document.querySelector(`#moments canvas[data-m="${k}"]`); if (!el) continue;
+    const mo = list[k];
+    if (st.hasVideo && st.times) { await seek(st.times[mo.i]); if (my !== thumbToken) return; }
+    drawThumb(el, mo);
+  }
+  if (st.hasVideo && my === thumbToken && !st.playing) { try { vid.currentTime = st.times[st.frame] ?? wasT; } catch {} }
+}
+function drawThumb(el, mo) {
+  const { ctx, w, h } = canvasCtx(el); ctx.fillStyle = css('--stage'); ctx.fillRect(0, 0, w, h);
+  const bw = mo.box.x1 - mo.box.x0, bh = mo.box.y1 - mo.box.y0, s = Math.min(w/bw, h/bh);
+  const ox = w/2 - (mo.box.x0 + bw/2)*s, oy = h/2 - (mo.box.y0 + bh/2)*s;
+  const map = (x, y) => [ox + x*s, oy + y*s];
+  if (st.hasVideo) {
+    const p0 = toPixel(st.seq, mo.box.x0, mo.box.y0), p1 = toPixel(st.seq, mo.box.x1, mo.box.y1);
+    const sx = Math.min(p0[0], p1[0]), sy = Math.min(p0[1], p1[1]), sw = Math.abs(p1[0] - p0[0]), sh = Math.abs(p1[1] - p0[1]);
+    const k = Math.min(w/sw, h/sh); try { ctx.drawImage(vid, sx, sy, sw, sh, w/2 - sw*k/2, h/2 - sh*k/2, sw*k, sh*k); } catch {}
+    ctx.fillStyle = 'rgba(7,12,18,.25)'; ctx.fillRect(0, 0, w, h);
+  }
+  const f = st.seq.frames[mo.i], t = st.seq.batTips && st.seq.batTips[mo.i];
+  if (t && t.c > 0.2 && st.mode === 'hit') { const hd = map((f[18] + f[20])/2, (f[19] + f[21])/2), tp = map(t.x, t.y); ctx.strokeStyle = '#D9A55B'; ctx.lineCap = 'round'; ctx.lineWidth = Math.max(2, s*0.02); ctx.beginPath(); ctx.moveTo(hd[0], hd[1]); ctx.lineTo(tp[0], tp[1]); ctx.stroke(); }
+  drawSkel(ctx, f, map, { colors: { l: css('--lead'), b: css('--back'), c: '#E9EEF4' }, scale: s, leadLeft: st.seq.leadLeft });
+}
+function focusMoment(k) {
+  const mo = st.moments && st.moments[k]; if (!mo) return;
+  pause(); zoom.focus = mo; seekFrame(mo.i);
+  const zr = $('zoomReset'); zr.hidden = false; zr.textContent = 'Zoomed: ' + mo.title + ' · Reset';
+  $('stage').scrollIntoView({ behavior: 'smooth', block: 'center' }); draw();
+}
 function afterAnalysis(quiet) {
   const r = st.res;
   st.focusFix = null; st.idealFrames = r.ideal;
@@ -352,7 +427,8 @@ function afterAnalysis(quiet) {
   st.frame = r.phases.start; st.fpos = st.frame;
   if (!st.compareRec && st.source !== 'demo') { const b = baselineFor(st.mode); st.compareRec = b && b.id !== st.recId ? b : proRecord(st.mode); }
   prepCompare();
-  setStageMeta(); sizeStage(); buildScrub(); renderReport(); seekFrame(r.phases.key);
+  computeBoxes(); zoom.focus = null; $('zoomReset').hidden = true; st.moments = keyMoments();
+  setStageMeta(); sizeStage(); buildScrub(); renderReport(); seekFrame(r.phases.key); buildMomentThumbs();
   if (!quiet) { setTab('Analyze'); toast('Analysis ready. Score ' + r.overall + '.'); }
 }
 function computeEnergy() {
@@ -441,11 +517,29 @@ function stageMap(w, h) {
   const vb = viewBox; const s = Math.min(w/(vb.x1 - vb.x0), h/(vb.y1 - vb.y0)); const ox = (w - (vb.x1 - vb.x0)*s)/2 - vb.x0*s, oy = (h - (vb.y1 - vb.y0)*s)/2 - vb.y0*s;
   return { map: (x, y) => [ox + x*s, oy + y*s], scale: s };
 }
+/* zoom: a focus region (from a key moment) or following the player; video and overlay move together */
+const zoom = { s: 1, tx: 0, ty: 0, follow: false, focus: null };
+function zoomTarget(base, w, h, i) {
+  let box = null;
+  if (zoom.focus) box = zoom.focus.box;
+  else if (zoom.follow && st.boxes) box = st.boxes[i];
+  if (!box) return { s: 1, tx: 0, ty: 0 };
+  const a = base.map(box.x0, box.y0), b = base.map(box.x1, box.y1);
+  const bw = Math.abs(b[0] - a[0]), bh = Math.abs(b[1] - a[1]), cx = (a[0] + b[0])/2, cy = (a[1] + b[1])/2;
+  const s = clamp(Math.min(w/(bw*1.2), h/(bh*1.2)), 1, 3.5);
+  return { s, tx: w/2 - cx*s, ty: h/2 - cy*s };
+}
 function draw() {
   const { ctx, w, h, dpr } = canvasCtx(); ctx.clearRect(0, 0, w, h);
   if (!st.seq || !st.res) return;
   const i = Math.round(st.frame), r = st.res, f = st.seq.frames[i];
-  const { map, scale } = stageMap(w, h);
+  const base = stageMap(w, h), zt = zoomTarget(base, w, h, i);
+  const ease = matchMedia('(prefers-reduced-motion: reduce)').matches ? 1 : 0.3;
+  zoom.s += (zt.s - zoom.s)*ease; zoom.tx += (zt.tx - zoom.tx)*ease; zoom.ty += (zt.ty - zoom.ty)*ease;
+  if (Math.abs(zt.s - zoom.s) > 0.002 || Math.abs(zt.tx - zoom.tx) > 0.5 || Math.abs(zt.ty - zoom.ty) > 0.5) { if (!st.playing) requestAnimationFrame(draw); }
+  else { zoom.s = zt.s; zoom.tx = zt.tx; zoom.ty = zt.ty; }
+  vid.style.transformOrigin = '0 0'; vid.style.transform = `translate(${zoom.tx/dpr}px, ${zoom.ty/dpr}px) scale(${zoom.s})`;
+  const map = (x, y) => { const q = base.map(x, y); return [q[0]*zoom.s + zoom.tx, q[1]*zoom.s + zoom.ty]; }, scale = base.scale*zoom.s;
   if (st.hasVideo && st.layers.video) { ctx.fillStyle = 'rgba(7,12,18,.32)'; ctx.fillRect(0, 0, w, h); }
   if (!st.hasVideo || !st.layers.video) {
     // field: ground line + chalk grid in body heights
@@ -607,6 +701,12 @@ function renderReport() {
     ${st.source === 'demo' ? `<p class="note" style="margin-top:12px">This is the pro model: a 3D ${kind === 'hit' ? 'swing' : 'delivery'} built from published biomechanics of pro ${kind === 'hit' ? 'hitters' : 'pitchers'}, shown from the camera angle you film from. When you analyze your own video, the pro model is laid over it in purple, lined up phase by phase.</p>` : ''}
   </div>
 
+  ${st.moments && st.moments.length ? `<div class="card">
+    <div class="eyebrow">Key moments</div>
+    <h2>Tap to zoom in</h2>
+    <div class="moments" id="moments">${st.moments.map((mo, k) => `<button class="moment ${mo.status}" data-moment="${k}"><canvas data-m="${k}" aria-hidden="true"></canvas><span class="mt">${esc(mo.title)}</span><span class="ms">${mo.status === 'phase' ? esc(mo.sub) : `<span class="pill ${mo.status}">${mo.status === 'fix' ? 'Fix' : 'Watch'}</span> ${esc(mo.sub)}`}</span><span class="mtime">${(() => { const ms = Math.round((mo.i - st.res.phases.key)/st.seq.fps*1000); return ms === 0 ? esc(st.res.phases.keyName) : (ms > 0 ? '+' : '') + ms + ' ms'; })()}</span></button>`).join('')}</div>
+    <p class="note" style="margin-top:8px">The app picked these from the phases of the ${MODE[kind].noun} and every check that needs work. Tap one to jump there and zoom the video onto that part of the body.</p>
+  </div>` : ''}
   ${cmp ? `<div class="card">
     <div class="eyebrow">Compared with</div>
     <h2>${esc(st.compareRec.name)}</h2>
@@ -670,6 +770,7 @@ function renderReport() {
   </div>
   <p class="note">Measured from one camera in 2D, so angles and distances are estimates. ${kind === 'hit' ? 'Bat position is estimated from the image. ' : ''}Use the numbers to compare your own reps filmed the same way.</p>`;
   requestAnimationFrame(drawChart);
+  if (st.moments) requestAnimationFrame(() => { (st.moments || []).forEach((mo, k) => { const el = document.querySelector(`#moments canvas[data-m="${k}"]`); if (el && !st.hasVideo) drawThumb(el, mo); }); if (st.hasVideo) buildMomentThumbs(); });
 }
 
 /* ---------------- library + game day ---------------- */
@@ -808,6 +909,8 @@ $('upIn').onchange = onFile;
   $('pickHelpClose').onclick = () => { $('pickHelp').hidden = true; };
 }
 $('procCancel').onclick = () => { st.cancel = true; };
+$('zoomReset').onclick = () => { zoom.focus = null; $('zoomReset').hidden = true; draw(); };
+$('zoomFollow').onclick = e => { zoom.follow = !zoom.follow; e.currentTarget.setAttribute('aria-pressed', zoom.follow); if (zoom.follow) { zoom.focus = null; $('zoomReset').hidden = true; } draw(); };
 $('bPlay').onclick = () => st.playing ? pause() : play();
 $('bPrev').onclick = () => { pause(); seekFrame(st.frame - 1); };
 $('bNext').onclick = () => { pause(); seekFrame(st.frame + 1); };
@@ -819,6 +922,7 @@ vid.addEventListener('seeked', () => { if (!st.busy && !st.playing) draw(); });
 document.addEventListener('keydown', e => { if (st.tab !== 'Analyze' || /INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName)) return; if (e.key === ' ') { e.preventDefault(); st.playing ? pause() : play(); } if (e.key === 'ArrowLeft') { pause(); seekFrame(st.frame - 1); } if (e.key === 'ArrowRight') { pause(); seekFrame(st.frame + 1); } });
 
 $('report').addEventListener('click', async e => {
+  const mo = e.target.closest('[data-moment]'); if (mo) { focusMoment(+mo.dataset.moment); return; }
   const g = e.target.closest('[data-goto]'); if (g) { pause(); seekFrame(st.res.phases.list.find(p => p[0] === g.dataset.goto)?.[1] ?? st.res.phases.key); $('stage').scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
   const fo = e.target.closest('[data-focus]'); if (fo) {
     const k = fo.dataset.focus; st.focusFix = st.focusFix === k ? null : k;
