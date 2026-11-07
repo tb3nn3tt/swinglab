@@ -191,13 +191,15 @@ async function trackFrame(W, H, tr, net) {
 /* bat: brightness edges + motion along rays from the hands, boosted where the detector sees a bat */
 const batState = { prev: null, lens: [] };
 const GW = 320;
-function grabGray(W, H) {
+function grabGray(W, H) { return grabFrame(W, H).gray; }
+// one small copy of the current frame: color for the background model, gray for edges and motion
+function grabFrame(W, H) {
   const GH = Math.round(H*GW/W);
   if (gcv.width !== GW || gcv.height !== GH) { gcv.width = GW; gcv.height = GH; }
   gx.drawImage(vid, 0, 0, GW, GH);
-  const im = gx.getImageData(0, 0, GW, GH).data, g = new Uint8Array(GW*GH);
-  for (let i = 0; i < g.length; i++) g[i] = (77*im[i*4] + 150*im[i*4+1] + 29*im[i*4+2]) >> 8;
-  return g;
+  const im = gx.getImageData(0, 0, GW, GH).data, n = GW*GH, g = new Uint8Array(n), rgb = new Uint8Array(n*3);
+  for (let i = 0; i < n; i++) { const r = im[i*4], gg = im[i*4+1], b = im[i*4+2]; rgb[i*3] = r; rgb[i*3+1] = gg; rgb[i*3+2] = b; g[i] = (77*r + 150*gg + 29*b) >> 8; }
+  return { gray: g, rgb, w: GW, h: GH };
 }
 // k: joints in video pixels; prev/gray/next: three consecutive frames (motion in all three = where the moving bat is now)
 function batScores(k, W, H, dets, quiet, gray, prev, next) {
@@ -242,9 +244,13 @@ async function probeFps() {
   if (!vid.requestVideoFrameCallback) return 30;
   return new Promise(res => {
     const ts = []; let done = false;
-    const finish = () => { if (done) return; done = true; vid.pause(); const d = []; for (let i = 1; i < ts.length; i++) { const x = ts[i] - ts[i-1]; if (x > 0.001) d.push(x); } d.sort((a, b) => a - b); const m = d.length ? d[d.length >> 1] : 1/30; res(clamp(Math.round(1/m), 24, 240)); };
-    const cb = (now, md) => { ts.push(md.mediaTime); if (ts.length >= 14) finish(); else vid.requestVideoFrameCallback(cb); };
-    vid.requestVideoFrameCallback(cb); vid.playbackRate = 1; vid.play().catch(() => finish()); setTimeout(finish, 1500);
+    const finish = () => { if (done) return; done = true; vid.pause(); const d = []; for (let i = 1; i < ts.length; i++) { const x = ts[i] - ts[i-1]; if (x > 0.001) d.push(x); } d.sort((a, b) => a - b);
+      // a busy phone drops frames during this test, which makes gaps of 2-3 frames: the true frame gap is the shortest one that repeats
+      const m = d.length >= 3 ? d[Math.floor(d.length*0.15)] : d.length ? d[0] : 1/30; const raw = 1/m;
+      const std = [24, 25, 30, 48, 50, 60, 90, 120, 240]; let fps = std.reduce((b, v) => Math.abs(v - raw) < Math.abs(b - raw) ? v : b, 30); if (Math.abs(fps - raw)/raw > 0.12) fps = Math.round(raw);
+      res(clamp(fps, 24, 240)); };
+    const cb = (now, md) => { ts.push(md.mediaTime); if (ts.length >= 24) finish(); else vid.requestVideoFrameCallback(cb); };
+    vid.requestVideoFrameCallback(cb); vid.playbackRate = 1; vid.play().catch(() => finish()); setTimeout(finish, 2000);
   }).then(async f => { await seek(0); return f; });
 }
 // turn the solved bat angles into tips (uses the user's taps when there are any)
@@ -304,7 +310,9 @@ async function analyzeFile(file, opts = {}) {
     const nativeFps = await probeFps();
     // every frame the video has, up to ~200 frames for the swing window
     const mstep = Math.max(1/nativeFps, (tB - tA)/200), perReal = slow/mstep;
-    const times = []; for (let t = tA; t <= tB + 1e-6; t += mstep) times.push(t);
+    // aim at the middle of each video frame: seeking right onto a frame boundary shows the frame before it on some browsers, which shifts and jitters everything by a frame
+    tA = (Math.floor(tA*nativeFps) + 0.5)/nativeFps;
+    const times = []; for (let k = 0; tA + k*mstep <= tB + 1e-6; k++) times.push(tA + k*mstep);
     const raw = [], dets = []; let found = 0; batState.prev = null; batState.lens = [];
     for (let i = 0; i < times.length; i++) {
       if (st.cancel) throw new Error('cancel');
@@ -324,11 +332,22 @@ async function analyzeFile(file, opts = {}) {
     const seq = { ...nz, fps: perReal, slow, vw: W, vh: H, kind }; // H stays the player's body height in pixels
     if (kind === 'hit') {
       // second look at each frame for the bat, now that the joints are cleaned up
-      const grays = [];
+      const grays = [], fgs = [], gsc = GW/W;
+      const hs0 = gauss1d(clean.map((k, i) => { const p = clean[Math.max(0, i-1)]; return Math.hypot((k[27]+k[30])/2 - (p[27]+p[30])/2, (k[28]+k[31])/2 - (p[28]+p[31])/2)/nz.H; }), 2);
+      const ff0 = hs0.findIndex(v => v > 0.36/perReal*2.5), fgFrom = ff0 < 0 ? 0 : Math.max(0, ff0 - Math.round(0.1*perReal));
+      // background: what the scene looks like without the moving bat, from frames spread across the clip
+      let bgm = null;
+      try {
+        const nb = Math.min(25, times.length), samp = [];
+        for (let k = 0; k < nb; k++) { if (st.cancel) throw new Error('cancel'); await seek(times[Math.round(k*(times.length - 1)/Math.max(1, nb - 1))]); samp.push(grabFrame(W, H).rgb); msg('Learning the background…', 0.95 + 0.01*(k+1)/nb); }
+        bgm = bgModel(samp, GW, Math.round(H*GW/W));
+      } catch (e) { if (e && e.message === 'cancel') throw e; bgm = null; }
       for (let i = 0; i < times.length; i++) {
         if (st.cancel) throw new Error('cancel');
-        await seek(times[i]); grays.push(grabGray(W, H));
-        msg('Following the bat… frame ' + (i+1) + ' of ' + times.length, 0.95 + 0.04*(i+1)/times.length);
+        await seek(times[i]); const fr = grabFrame(W, H); grays.push(fr.gray);
+        if (bgm && i >= fgFrom) { const fg = fgMap(fr.rgb, bgm); let on = 0; const q = new Uint8Array(fg.length); for (let p = 0; p < fg.length; p++) { q[p] = Math.round(fg[p]*255); if (fg[p] > 0.5) on++; } fgs.push(on/fg.length < 0.35 ? q : null); } // most of the frame "moving" means the camera moved: skip this cue
+        else fgs.push(null);
+        msg('Following the bat… frame ' + (i+1) + ' of ' + times.length, 0.96 + 0.03*(i+1)/times.length);
       }
       batState.lens = batState.lens || [];
       const hs = clean.map((k, i) => { const p = clean[Math.max(0, i-1)]; return Math.hypot((k[27]+k[30])/2 - (p[27]+p[30])/2, (k[28]+k[31])/2 - (p[28]+p[31])/2)/nz.H; });
@@ -340,7 +359,14 @@ async function analyzeFile(file, opts = {}) {
       const allow = hs.map((v, i) => (i >= pk - Math.round(0.15*perReal) && i <= pk + Math.round(0.8*perReal)) ? Math.max(12, 2 + 80*v) : 2 + 80*v);
       const lens = batState.lens.slice().sort((a, b) => a - b);
       const L = (lens.length >= 3 ? clamp(lens[lens.length >> 1], 0.32, 0.62) : 0.45)*nz.H;
-      st.batCtx = { scores, allow, hsp: hsS, hands: clean.map(k => [(k[27] + k[30])/2, (k[28] + k[31])/2]), L, nz, anchors: {}, taps: [] };
+      // the background cue takes over once the swing starts; in the stance the bat sits still and may blend into the background
+      const GHh = Math.round(H*GW/W);
+      for (let i = 0; i < scores.length; i++) {
+        if (!fgs[i] || (firstFast >= 0 && i < firstFast - Math.round(0.1*perReal))) continue;
+        const k = clean[i], fg = Float32Array.from(fgs[i], v => v/255), hx = (k[27] + k[30])/2*gsc, hy = (k[28] + k[31])/2*gsc;
+        scores[i] = fgBatScores(fg, grays[i], GW, GHh, hx, hy, L*1.25*gsc, [[k[21]*gsc, k[22]*gsc], [k[24]*gsc, k[25]*gsc]]);
+      }
+      st.batCtx = { dbg: { fgFrom, bg: !!bgm, used: fgs.map(Boolean) }, scores, allow, hsp: hsS, clean, hands: clean.map(k => [(k[27] + k[30])/2, (k[28] + k[31])/2]), L, nz, anchors: {}, taps: [] };
       applyBatPath(seq);
     } else st.batCtx = null;
     // which side leads and where the pitcher is, from the motion itself
@@ -1022,7 +1048,7 @@ $('report').addEventListener('click', async e => {
   }
 });
 $('report').addEventListener('change', e => {
-  if (e.target.id === 'cmpSel') { st.compareRec = e.target.value.startsWith('model:') ? modelRecord(st.mode, e.target.value.slice(6)) : st.records.find(r => r.id === e.target.value) || null; prepCompare(); st.layers.past = true; document.querySelector('[data-layer="past"]').setAttribute('aria-pressed', 'true'); setStageMeta(); renderReport(); draw(); }
+  if (e.target.id === 'cmpSel') setCompare(e.target.value);
 });
 document.addEventListener('click', async e => {
   const t = e.target.closest('[data-tab]'); if (t) { setTab(t.dataset.tab); return; }
@@ -1077,4 +1103,46 @@ store.init();
 requestAnimationFrame(loop);
 setTimeout(() => { ensureModel().catch(() => {}); }, 1500);
 setTimeout(() => { ensurePrecise().catch(() => {}); ensureDetector(); }, 4000);
+
+/* ---------------- full screen: show a player his swing with the skeleton, the fixed form and his good swing ---------------- */
+function fsOptions() {
+  const kind = st.mode, recs = recsFor(kind).filter(x => x.id !== st.recId), base = st.prefs['base_' + kind];
+  recs.sort((a, b) => (b.id === base) - (a.id === base));
+  const cur = st.compareRec && st.compareRec.id;
+  $('fsCmp').innerHTML = `<option value="">Nothing</option>` + recs.map(x => `<option value="${esc(x.id)}" ${cur === x.id ? 'selected' : ''}>${x.id === base ? '★ ' : ''}${esc(x.name)} · ${x.overall}</option>`).join('') + modelOptions(kind, cur);
+  if (!cur) $('fsCmp').value = '';
+}
+function fsFixes() {
+  const r = st.res; if (!r) { $('fsFixes').innerHTML = ''; return; }
+  const fixes = r.metrics.filter(m => m.status === 'fix' || m.status === 'watch').sort((a, b) => a.score - b.score).slice(0, 3);
+  $('fsFixes').innerHTML = fixes.map((m, i) => `<button class="fs-fix ${m.status}" type="button" data-fsgo="${esc(m.phase)}"><b>${i + 1}</b>${esc(m.label)}</button>`).join('');
+}
+function fsSync() { document.querySelectorAll('[data-fsl]').forEach(b => b.setAttribute('aria-pressed', !!st.layers[b.dataset.fsl])); document.querySelector('[data-fsl="bat"]').hidden = st.mode !== 'hit' || !st.batCtx; }
+function setCompare(v) {
+  st.compareRec = !v ? null : v.startsWith('model:') ? modelRecord(st.mode, v.slice(6)) : st.records.find(r => r.id === v) || null;
+  if (st.compareRec) { prepCompare(); st.layers.past = true; }
+  const ch = document.querySelector('[data-layer="past"]'); if (ch) ch.setAttribute('aria-pressed', !!st.compareRec);
+  setStageMeta(); renderReport(); draw();
+}
+function enterFs() {
+  const card = $('stage').closest('.stage-card'); card.classList.add('fs'); document.documentElement.classList.add('fs-open');
+  fsOptions(); fsSync(); fsFixes();
+  const el = document.documentElement; try { const r = el.requestFullscreen ? el.requestFullscreen({ navigationUI: 'hide' }) : el.webkitRequestFullscreen ? el.webkitRequestFullscreen() : null; if (r && r.catch) r.catch(() => {}); } catch {}
+  try { if (screen.orientation && screen.orientation.lock && vid.videoWidth > vid.videoHeight) screen.orientation.lock('landscape').catch(() => {}); } catch {}
+  requestAnimationFrame(() => { if (st.res) { computeViewBox(); draw(); } });
+}
+function exitFs() {
+  const card = $('stage').closest('.stage-card'); card.classList.remove('fs'); document.documentElement.classList.remove('fs-open');
+  try { if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {}); else if (document.webkitFullscreenElement && document.webkitExitFullscreen) document.webkitExitFullscreen(); } catch {}
+  try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch {}
+  requestAnimationFrame(() => { if (st.res) { computeViewBox(); draw(); } });
+}
+$('fsBtn').onclick = () => $('stage').closest('.stage-card').classList.contains('fs') ? exitFs() : enterFs();
+$('fsExit').onclick = exitFs;
+document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && $('stage').closest('.stage-card').classList.contains('fs')) exitFs(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('stage').closest('.stage-card').classList.contains('fs')) exitFs(); });
+$('fsChips').onclick = e => { const b = e.target.closest('[data-fsl]'); if (!b) return; const k = b.dataset.fsl; st.layers[k] = !st.layers[k]; const m = document.querySelector(`[data-layer="${k}"]`); if (m) m.setAttribute('aria-pressed', st.layers[k]); fsSync(); setStageMeta(); draw(); };
+$('fsCmp').onchange = e => setCompare(e.target.value);
+$('fsFixes').onclick = e => { const b = e.target.closest('[data-fsgo]'); if (!b || !st.res) return; pause(); seekFrame(st.res.phases.list.find(p => p[0] === b.dataset.fsgo)?.[1] ?? st.res.phases.key); if (!st.layers.ideal) { st.layers.ideal = true; fsSync(); } draw(); };
+window.__swinglab = { st, applyBatPath: () => st.seq && applyBatPath(st.seq) }; // test hook for the automated checks
 })();

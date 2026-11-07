@@ -147,6 +147,26 @@ details.tips ul { margin: 8px 0 0; padding-left: 18px; color: var(--ink-2); font
 
 /* stage */
 .stage-card { padding: 0; overflow: hidden; }
+/* full screen: the stage fills the screen, controls stay underneath */
+.fs-bar { display: none; }
+.stage-card.fs { position: fixed; inset: 0; z-index: 60; border-radius: 0; margin: 0; display: flex; flex-direction: column; background: var(--stage);
+  padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); }
+.stage-card.fs .stage-head { display: none; }
+.stage-card.fs .fs-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 12px; background: var(--surface); }
+.stage-card.fs .stage { flex: 1 1 auto; min-height: 0; max-height: none; aspect-ratio: auto !important; }
+.stage-card.fs .controls { background: var(--surface); padding-bottom: 6px; }
+.stage-card.fs .legend, .stage-card.fs #layersBtn, .stage-card.fs #layerPanel { display: none; }
+.fs-chips { flex-wrap: nowrap; overflow-x: auto; }
+.fs-cmp { display: flex; align-items: center; gap: 6px; font-size: 13px; min-width: 0; flex: 1 1 160px; }
+.fs-cmp span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.fs-cmp select { flex: 1; min-width: 0; max-width: 260px; }
+html.fs-open, html.fs-open body { overflow: hidden; }
+.fs-fixes { display: flex; gap: 6px; flex-wrap: wrap; width: 100%; order: 5; }
+.fs-fixes:empty { display: none; }
+.fs-fix { font: 600 13px/1.2 var(--f-body, inherit); color: inherit; background: rgba(240,101,79,.18); border: 1px solid rgba(240,101,79,.55); border-radius: 999px; padding: 6px 10px; cursor: pointer; }
+.fs-fix.watch { background: rgba(232,180,74,.16); border-color: rgba(232,180,74,.55); }
+.fs-fix b { color: #F0654F; margin-right: 4px; } .fs-fix.watch b { color: #E8B44A; }
+
 .stage-head { display: flex; gap: 8px; align-items: center; justify-content: space-between; padding: 12px 14px; flex-wrap: wrap; }
 .src-tag { font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 8px; border-radius: 6px; background: var(--accent-soft); color: var(--ink); }
 .stage { position: relative; background: var(--stage); width: 100%; aspect-ratio: 4 / 5; max-height: 64vh; overflow: hidden; }
@@ -341,6 +361,16 @@ i.dot.good { background: var(--good); } i.dot.watch { background: var(--watch); 
             <div><div class="eyebrow">Playback</div><h3 id="srcName">Sample swing</h3></div>
             <span class="src-tag" id="srcTag">Sample data</span>
           </div>
+          <div class="fs-bar" id="fsBar">
+            <button class="tool" id="fsExit" type="button">Exit</button>
+            <div class="chips fs-chips" id="fsChips">
+              <button class="chip" data-fsl="skel" aria-pressed="true"><i class="sw" style="background:var(--lead)"></i>Skeleton</button>
+              <button class="chip" data-fsl="ideal" aria-pressed="true"><i class="sw" style="background:var(--ghost)"></i>Fixed form</button>
+              <button class="chip" data-fsl="bat" aria-pressed="true"><i class="sw" style="background:#FF4FA3"></i>Bat</button>
+            </div>
+            <div class="fs-fixes" id="fsFixes"></div>
+            <label class="fs-cmp"><span><i class="sw" style="background:var(--past)"></i>Compare</span><select id="fsCmp" aria-label="Compare with"></select></label>
+          </div>
           <div class="stage" id="stage">
             <video id="vid" playsinline muted preload="auto"></video>
             <canvas id="cv"></canvas>
@@ -364,6 +394,7 @@ i.dot.good { background: var(--good); } i.dot.watch { background: var(--watch); 
               <button class="tool" id="zoomFollow" type="button" aria-pressed="false">Zoom</button>
               <button class="tool" id="batFix" type="button" aria-pressed="false" hidden>Fix bat</button>
               <button class="tool" id="layersBtn" type="button" aria-expanded="false" aria-controls="layerPanel">Layers</button>
+              <button class="tool" id="fsBtn" type="button" aria-label="Full screen"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
             </div>
             <div class="layer-panel" id="layerPanel" hidden>
               <div class="chips" id="layerChips" aria-label="Layers">

@@ -233,6 +233,87 @@ function solveBat2(scores, allow, anchors, W8, dir) {
   out.cost = cost[best]; return out;
 }
 
+/* ---------- bat evidence from the still background ----------
+   The camera sits still, so a background built from many frames shows what never moves. The bat is never part of it,
+   so even a blurred bat at contact stands out against the wall. Two cues per ray from the hands:
+   a thin foreground ridge (foreground on the ray, not beside it: arms and the body are wide, the bat is thin) and
+   dark/bright line edges that only count where something moves (static rakes and door frames drop out). */
+const SRGB_LIN = (() => { const t = new Float32Array(256); for (let i = 0; i < 256; i++) { const c = i/255; t[i] = c <= 0.04045 ? c/12.92 : Math.pow((c + 0.055)/1.055, 2.4); } return t; })();
+function srgbToLab8(r, g, b) {
+  const R = SRGB_LIN[r], G = SRGB_LIN[g], B = SRGB_LIN[b];
+  let x = (0.412453*R + 0.357580*G + 0.180423*B)/0.950456, y = 0.212671*R + 0.715160*G + 0.072169*B, z = (0.019334*R + 0.119193*G + 0.950227*B)/1.088754;
+  const h = t => t > 0.008856 ? Math.cbrt(t) : 7.787*t + 16/116;
+  const L = y > 0.008856 ? 116*Math.cbrt(y) - 16 : 903.3*y;
+  return [L*2.55, 500*(h(x) - h(y)) + 128, 200*(h(y) - h(z)) + 128];
+}
+function toLab(rgb, n) { const o = new Float32Array(n*3); for (let i = 0; i < n; i++) { const l = srgbToLab8(rgb[i*3], rgb[i*3+1], rgb[i*3+2]); o[i*3] = l[0]; o[i*3+1] = l[1]; o[i*3+2] = l[2]; } return o; }
+// frames: RGB Uint8Arrays (w*h*3) sampled across the clip
+function bgModel(frames, w, h) {
+  const n = w*h, m = frames.length, bg = new Uint8Array(n*3), tmp = new Uint8Array(m);
+  for (let i = 0; i < n*3; i++) { for (let k = 0; k < m; k++) tmp[k] = frames[k][i]; tmp.sort(); bg[i] = tmp[m >> 1]; }
+  const g = new Float32Array(n); for (let i = 0; i < n; i++) g[i] = 0.299*bg[i*3] + 0.587*bg[i*3+1] + 0.114*bg[i*3+2];
+  const e = new Float32Array(n);
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    const o = y*w + x, gx = (g[o-w+1] + 2*g[o+1] + g[o+w+1]) - (g[o-w-1] + 2*g[o-1] + g[o+w-1]), gy = (g[o+w-1] + 2*g[o+w] + g[o+w+1]) - (g[o-w-1] + 2*g[o-w] + g[o-w+1]);
+    e[o] = Math.hypot(gx, gy);
+  }
+  return { w, h, lab: toLab(bg, n), edge: maxFilter(e, w, h, 1) };
+}
+function maxFilter(a, w, h, r) {
+  const t = new Float32Array(a.length), o = new Float32Array(a.length);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let m = 0; for (let d = -r; d <= r; d++) { const xx = x + d; if (xx >= 0 && xx < w) m = Math.max(m, a[y*w + xx]); } t[y*w + x] = m; }
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let m = 0; for (let d = -r; d <= r; d++) { const yy = y + d; if (yy >= 0 && yy < h) m = Math.max(m, t[yy*w + x]); } o[y*w + x] = m; }
+  return o;
+}
+// 0..1 foreground; tolerant of a pixel of camera shake; static edges of the scene never count
+function fgMap(rgb, B) {
+  const { w, h } = B, n = w*h, L = toLab(rgb, n), bl = B.lab, out = new Float32Array(n);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const o = y*w + x; let best = 1e9;
+    for (let dy = -1; dy <= 1; dy++) { const yy = y + dy; if (yy < 0 || yy >= h) continue;
+      for (let dx = -1; dx <= 1; dx++) { const xx = x + dx; if (xx < 0 || xx >= w) continue; const q = (yy*w + xx)*3;
+        const a = L[o*3] - bl[q], b = L[o*3+1] - bl[q+1], c = L[o*3+2] - bl[q+2]; const d = a*a + b*b + c*c; if (d < best) best = d; } }
+    out[o] = clamp((Math.sqrt(best) - 10)/14, 0, 1)*clamp(1 - B.edge[o]/60, 0, 1);
+  }
+  return out;
+}
+// per-angle bat score from the foreground (72 bins); hx,hy and elbows in these image pixels; Lmax in these pixels
+function fgBatScores(fg, gray, w, h, hx, hy, Lmax, elbows) {
+  const s = w/360, nr = 40, LBF = [0.08, 0.25, 0.42, 0.58, 0.74, 0.88, 1.0].map(v => Math.max(0, Math.round(v*nr) - 1));
+  const fgd = maxFilter(fg, w, h, Math.max(1, Math.round(2*s)));
+  const at = (a, x, y) => { const xi = Math.round(x), yi = Math.round(y); if (xi < 0 || yi < 0 || xi >= w || yi >= h) return 0; return a[yi*w + xi]; };
+  const atG = (x, y) => { const xi = clamp(Math.round(x), 0, w - 1), yi = clamp(Math.round(y), 0, h - 1); return gray[yi*w + xi]; };
+  const best = new Float32Array(NA).fill(-1e9), stepO = 6*s, dE = 3*s, tR = 0.15, tE = 0.15;
+  for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+    const x0 = hx + ox*stepO, y0 = hy + oy*stepO, pen = 0.02*Math.hypot(ox, oy)*6;
+    const arm = elbows.map(([ex, ey]) => ({ a: Math.atan2(ey - y0, ex - x0), d: Math.hypot(ex - x0, ey - y0)*1.15 }));
+    for (let a = 0; a < NA; a++) {
+      const ang = a*5*Math.PI/180, cx = Math.cos(ang), cy = Math.sin(ang);
+      const hide = arm.filter(q => { let dd = Math.abs(ang - q.a); dd = Math.min(dd, 2*Math.PI - dd); return dd < 0.3; });
+      let cs = 0, bi = 0, top = -1e9;
+      for (let k = 0; k < nr; k++) {
+        const r = (0.22 + 0.78*k/(nr - 1))*Lmax, x = x0 + cx*r, y = y0 + cy*r;
+        let v;
+        if (hide.some(q => r < q.d)) v = -0.5*tR - 0.5*tE;
+        else {
+          const off = (10 + 0.2*r/s)*s; // side samples, wider far out where the blur fans out
+          const c = at(fg, x, y), s1 = at(fg, x - cy*off, y + cx*off), s2 = at(fg, x + cy*off, y - cx*off);
+          const ridge = Math.max(0, c - Math.max(s1, s2));
+          const g = atG(x, y), g1 = atG(x - cy*dE, y + cx*dE), g2 = atG(x + cy*dE, y - cx*dE);
+          const edge = Math.min(1.5, Math.max(0, Math.abs(g - (g1 + g2)/2) - Math.abs(g1 - g2)*0.5)/40)*at(fgd, x, y);
+          v = (ridge - tR) + (edge - tE);
+        }
+        cs += v;
+        if (k === LBF[bi]) { const sc = cs/nr*8 - pen; if (sc > top) top = sc; bi++; }
+      }
+      if (top > best[a]) best[a] = top;
+    }
+  }
+  const med = percentile(Array.from(best), 0.5), out = new Float32Array(NA);
+  for (let a = 0; a < NA; a++) out[a] = Math.max(0, best[a] - med)*50;
+  return out;
+}
+
 // Follow-up pass: through the swing the barrel sweeps one way. Find frames where the first path turns
 // backward (usually motion blur at contact fooling the edge finder), trust their evidence less, re-solve
 // with backward turns forbidden inside the swing, then lightly smooth. Tapped frames stay where tapped.
@@ -627,4 +708,4 @@ function addBatSpeed(seq) {
   seq.batOk = ok > 0.55;
 }
 
-if (typeof module !== 'undefined') module.exports = { NJ, JN, sideMap, cleanRaw, unifyHands, detectSides, normalize, toPixel, solveBat, solveBat2, refineBat, swingWindow, BAT_W, detectPhases, analyzeMotion, packRecord, seqFromRecord, alignIndex, lerpFrame, compareRecords, buildDemo, buildPro, buildFaulty, buildModel, MODELS, addBatSpeed, NA, angAt, P, mid, gauss1d, deriv, speedSeries };
+if (typeof module !== 'undefined') module.exports = { NJ, JN, sideMap, cleanRaw, unifyHands, detectSides, normalize, toPixel, solveBat, solveBat2, refineBat, swingWindow, bgModel, fgMap, fgBatScores, BAT_W, detectPhases, analyzeMotion, packRecord, seqFromRecord, alignIndex, lerpFrame, compareRecords, buildDemo, buildPro, buildFaulty, buildModel, MODELS, addBatSpeed, NA, angAt, P, mid, gauss1d, deriv, speedSeries };
