@@ -248,22 +248,49 @@ function detectPhases(seq, kind) {
   const { frames, fps } = seq; const S = sideMap(seq.leadLeft); const n = frames.length; const sec = s => Math.round(s*fps);
   const ankX = frames.map(f => f[S.lAn*2]);
   if (kind === 'hit') {
-    const hands = speedSeries(frames, fps, f => mid(f, 9, 10));
-    let C = argmax(hands, Math.min(n-1, sec(0.2)), Math.max(0, n-1-sec(0.05)));
-    if (seq.batSpeed) { const bs = seq.batSpeed; const b = argmax(bs, Math.max(0, C-3), Math.min(n-1, C+sec(0.12))); if (bs[b] > 0) C = b; } else C = Math.min(n-1, C+1);
-    const x0 = ankX[0]; let D = 0; for (let i = 0; i <= C; i++) D = Math.max(D, ankX[i]-x0);
-    let FP = -1, S0 = 0;
-    if (D > 0.04) { for (let i = 0; i <= C; i++) if (ankX[i]-x0 >= 0.9*D) { FP = i; break; } for (let i = 0; i <= FP; i++) if (ankX[i]-x0 > 0.12*D) { S0 = i; break; } }
-    if (FP < 0 || C - FP < 2) { FP = Math.max(0, C - sec(0.2)); S0 = Math.max(0, FP - sec(0.25)); }
-    const hx = frames.map(f => mid(f, 9, 10)[0]);
-    const L = argmin(hx, Math.max(0, S0 - sec(0.4)), Math.max(Math.max(0, S0 - sec(0.4)), FP));
-    const vx = gauss1d(deriv(hx, fps), 0.8); const pk = Math.max(...vx.slice(L, C+1));
-    let Lc = FP; for (let i = L; i <= C; i++) if (vx[i] > 0.25*pk) { Lc = Math.max(i, L); break; }
-    if (Lc > C) Lc = C;
-    const E = Math.min(n-1, argmax(hx, C, Math.min(n-1, C + sec(0.25))));
+    /* Phases follow the standard hitting sequence: stance → load (weight and hands shift back) → stride (front foot
+       moves toward the pitcher) → foot plant (front foot lands) → launch (hips, torso, then arms fire) → contact →
+       extension → finish. Only the FRONT foot moving TOWARD the pitcher counts as the stride, so a back-foot step
+       or a foot drawn back during the load is never mistaken for it. +x is toward the pitcher. */
+    const hm = f => mid(f, 9, 10);
+    const hands = speedSeries(frames, fps, hm);
+    const Hpk = argmax(hands, Math.min(n-1, sec(0.25)), Math.max(0, n-1-sec(0.05)));
+    // contact: peak barrel speed around the hands' peak; extension: barrel reaching out toward the pitcher after it
+    let C = Math.min(n-1, Hpk + 1), E;
+    const tips = seq.batTips, useBat = tips && seq.batOk && seq.batSpeed;
+    const reach = i => { const t = tips && tips[i]; return t ? t.x - hm(frames[i])[0] : -9; };
+    if (useBat) {
+      E = argmax(Array.from({ length: n }, (_, i) => reach(i)), Hpk, Math.min(n-1, Hpk + sec(0.35)));
+      // hand speed peaks just before contact and the arms reach full extension just after it
+      C = Math.round(Hpk + 0.5*(E - Hpk));
+      if (E <= C) E = Math.min(n-1, C + sec(0.07));
+    } else E = Math.min(n-1, C + sec(0.08));
+    // stride: the front ankle's main move toward the pitcher in the 0.8 s before contact
+    const ax = gauss1d(ankX, 1), vx = deriv(ax, fps);
+    const ayRaw = frames.map(f => -f[S.lAn*2+1]), ay = gauss1d(ayRaw, 1);
+    const a0 = Math.max(0, C - sec(0.8)), base = percentile(ay.slice(0, Math.max(3, a0)), 0.5);
+    const vp = argmax(vx, a0, Math.max(a0, C - 1));
+    let S0, FP;
+    if (vx[vp] > 0.12) { // a real stride (body heights per second)
+      S0 = vp; while (S0 > a0 && vx[S0-1] > 0.15*vx[vp]) S0--;
+      let maxLift = 0; for (let i = S0; i <= vp; i++) maxLift = Math.max(maxLift, ay[i] - base);
+      // the foot lands after its highest point: first frame after that where it is back down and has stopped moving
+      let lp = S0; for (let i = S0; i < C; i++) if (ay[i] > ay[lp]) lp = i;
+      for (let i = vp; i <= lp; i++) maxLift = Math.max(maxLift, ay[i] - base);
+      FP = Math.max(vp, lp); while (FP < C - 1 && !(Math.abs(vx[FP]) < 0.25*vx[vp] && ay[FP] - base < Math.max(0.01, 0.4*maxLift))) FP++;
+    } else { FP = Math.max(0, C - sec(0.18)); S0 = Math.max(0, FP - sec(0.2)); } // no-stride hitter
+    // load: the hips shift back toward the catcher before the stride (the "negative move")
+    const hipX = gauss1d(frames.map(f => mid(f, 11, 12)[0]), 1.5);
+    const L = argmin(hipX, Math.max(0, S0 - sec(0.6)), Math.max(Math.max(0, S0 - sec(0.6)), Math.min(S0 + sec(0.05), FP)));
+    // launch: the swing starts: hips rotating and hands speeding up, after the stride has begun
+    const pel = rotationSeries(frames, fps, 11, 12, Math.max(3, FP)).speed;
+    const pPk = Math.max(1e-6, ...pel.slice(S0, C + 1)), hPk = Math.max(1e-6, ...hands.slice(S0, C + 1));
+    let Lc = FP; for (let i = S0; i < C; i++) if (pel[i] > 0.35*pPk && hands[i] > 0.25*hPk) { Lc = i; break; }
+    Lc = clamp(Lc, Math.min(FP, C - 1), C - 1);
     const F = Math.min(n-1, C + sec(0.6));
-    const ST = Math.max(0, Math.min(L, S0) - sec(0.3));
-    return { list: [ ['Stance', ST], ['Load', L], ['Foot plant', FP], ['Launch', Lc], ['Contact', C], ['Extension', E], ['Finish', F] ], start: ST, end: F, key: C, keyName: 'Contact' };
+    const Ld = L >= S0 ? Math.max(0, S0 - sec(0.1)) : L;
+    const ST = Math.max(0, Ld - sec(0.3));
+    return { list: [ ['Stance', ST], ['Load', Ld], ['Stride', S0], ['Foot plant', FP], ['Launch', Lc], ['Contact', C], ['Extension', E], ['Finish', F] ], start: ST, end: F, key: C, keyName: 'Contact' };
   } else {
     const wr = speedSeries(frames, fps, f => P(f, S.bWr));
     const R = argmax(wr, Math.min(n-1, sec(0.3)), Math.max(0, n-1-sec(0.05)));
@@ -390,7 +417,7 @@ function analyzeMotion(seq, kind) {
 
     /* ---- head: level, not dropping, eyes staying on the ball ---- */
     const drop = (nC[1] - nL[1])*100; // + = head went down
-    add({ key: 'headDrop', label: 'Head height, load to contact', value: drop, unit: '% ht', lo: -3, hi: 4, tol: 4, weight: 1.2, phase: 'Contact',
+    add({ key: 'headDrop', label: 'Head height, load to contact', value: drop, unit: '% ht', lo: -3, hi: 6, tol: 4, weight: 1.2, phase: 'Contact',
       high: `Head drops ${drop.toFixed(0)}% of your height into contact. Dropping the head changes your eye level, so the ball looks like it moved.`, low: 'Head pops up into contact. Standing up pulls the barrel over the ball.',
       drillHigh: 'Stride-and-hold drill against a wall: the top of your cap should not slide down the wall when you stride and turn.', drillLow: 'Stay in your legs through the turn. Feel the back knee drive forward, not up.',
       fix: (f, i) => { const w = bump(i, L, Math.round((L+C)/2), FI, n+1); const dy = (nL[1] - P(f, 0)[1]); if (Math.abs(dy) < 0.02) return; const k = (Math.abs(dy) - 0.02)/Math.abs(dy); shiftJ(f, HEAD, 0, dy*k, w); shiftJ(f, [5,6], 0, dy*k, w*0.7); shiftJ(f, [7,8,9,10], 0, dy*k, w*0.5); } });
@@ -415,7 +442,7 @@ function analyzeMotion(seq, kind) {
       drillHigh: 'High-tee drill: set the tee at the top of the zone and hit line drives. Keep the knob pointed at the ball and the barrel above the hands until they pass the back hip.', fix: null });
     const handsOut = i => dist(mid(at(i), 9, 10), P(at(i), S.bSh));
     const cast = (handsOut(midL) - handsOut(LA))*100;
-    add({ key: 'cast', label: 'Hands stay close (casting)', value: cast, unit: '% ht', lo: -10, hi: 7, tol: 5, weight: 1, phase: 'Launch',
+    add({ key: 'cast', label: 'Hands stay close (casting)', value: cast, unit: '% ht', lo: -30, hi: 7, tol: 5, weight: 1, phase: 'Launch',
       high: 'Hands drift away from the body early. That is casting: a long, slow swing that loses the inside pitch.', drillHigh: 'Fence drill: stand a bat-length from a fence and swing without touching it. Lead with the knob, keep the back elbow tight.', fix: (f, i) => { const w = bump(i, LA, midL, midL, C); const sh = P(f, S.bSh), h = mid(f, 9, 10); const tgt = clamp(cast, -10, 6)/100; const k = (handsOut(midL) - handsOut(LA) - tgt)/Math.max(0.05, dist(h, sh)); if (k <= 0) return; shiftJ(f, [9, 10], (sh[0]-h[0])*k, (sh[1]-h[1])*k, w); shiftJ(f, [7, 8], (sh[0]-h[0])*k*0.5, (sh[1]-h[1])*k*0.5, w); } });
 
     /* ---- rotation: not opening early, not over-rotating ---- */

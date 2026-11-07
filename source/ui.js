@@ -404,7 +404,7 @@ function computeBoxes() {
   st.boxes = raw.map((_, i) => ({ x0: sm[0][i], y0: sm[1][i], x1: sm[2][i], y1: sm[3][i] }));
 }
 const ROI = {
-  hit: { head: 'head', headDrop: 'head', eyes: 'head', headTurn: 'head', stride: 'feet', frontFoot: 'feet', backFoot: 'feet', load: 'hands', cast: 'hands', dump: 'hands', ttc: 'hands',
+  hit: { stride2: 'feet', head: 'head', headDrop: 'head', eyes: 'head', headTurn: 'head', stride: 'feet', frontFoot: 'feet', backFoot: 'feet', load: 'hands', cast: 'hands', dump: 'hands', ttc: 'hands',
     leadKnee: 'leadLeg', backKnee: 'backLeg', tilt: 'torso', drift: 'torso', earlyOpen: 'torso', overRot: 'torso', seq: 'torso', balance: 'body' },
   pitch: { lift: 'leadLeg', stride: 'feet', kneeFP: 'leadLeg', block: 'leadLeg', elbow: 'throwArm', armTiming: 'throwArm', trunk: 'torso', glove: 'gloveArm', release: 'throwArm', seq: 'torso' },
 };
