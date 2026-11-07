@@ -180,15 +180,20 @@ async function trackFrame(W, H, tr, net) {
 }
 /* bat: brightness edges + motion along rays from the hands, boosted where the detector sees a bat */
 const batState = { prev: null, lens: [] };
-function batScores(k, W, H, dets, quiet) {
-  const GW = 256, sc = GW / W, GH = Math.round(H*sc);
-  if (gcv.width !== GW || gcv.height !== GH) { gcv.width = GW; gcv.height = GH; batState.prev = null; }
+const GW = 320;
+function grabGray(W, H) {
+  const GH = Math.round(H*GW/W);
+  if (gcv.width !== GW || gcv.height !== GH) { gcv.width = GW; gcv.height = GH; }
   gx.drawImage(vid, 0, 0, GW, GH);
-  const im = gx.getImageData(0, 0, GW, GH).data;
-  const gray = new Float32Array(GW*GH); for (let i = 0; i < gray.length; i++) gray[i] = 0.3*im[i*4] + 0.59*im[i*4+1] + 0.11*im[i*4+2];
-  const prev = batState.prev; batState.prev = gray;
+  const im = gx.getImageData(0, 0, GW, GH).data, g = new Uint8Array(GW*GH);
+  for (let i = 0; i < g.length; i++) g[i] = (77*im[i*4] + 150*im[i*4+1] + 29*im[i*4+2]) >> 8;
+  return g;
+}
+// k: joints in video pixels; prev/gray/next: three consecutive frames (motion in all three = where the moving bat is now)
+function batScores(k, W, H, dets, quiet, gray, prev, next) {
+  const sc = GW / W, GH = Math.round(H*sc);
   const I = (x, y) => { const xi = x|0, yi = y|0; if (xi < 0 || yi < 0 || xi >= GW || yi >= GH) return -1; return gray[yi*GW + xi]; };
-  const M = (x, y) => { if (!prev) return 0; const xi = x|0, yi = y|0; if (xi < 0 || yi < 0 || xi >= GW || yi >= GH) return 0; return Math.abs(gray[yi*GW + xi] - prev[yi*GW + xi]); };
+  const M = (x, y) => { if (!prev || !next) return 0; const xi = x|0, yi = y|0; if (xi < 0 || yi < 0 || xi >= GW || yi >= GH) return 0; const o = yi*GW + xi; return Math.min(Math.abs(gray[o] - prev[o]), Math.abs(next[o] - gray[o])); };
   const hx = (k[27] + k[30])/2*sc, hy = (k[28] + k[31])/2*sc;
   const Hg = Math.max(20, (((k[45+1] + k[48+1])/2) - k[1]) / 0.88 * sc);
   const out = new Float32Array(NA); const r0 = 0.07*Hg, r1 = 0.5*Hg, d = Math.max(2, 0.035*Hg), steps = 22;
@@ -201,7 +206,7 @@ function batScores(k, W, H, dets, quiet) {
       const c = I(x, y), s1 = I(x + nx*d, y + ny*d), s2 = I(x - nx*d, y - ny*d); if (c < 0 || s1 < 0 || s2 < 0) continue;
       sum += Math.max(0, Math.abs(c - (s1 + s2)/2) - Math.abs(s1 - s2)*0.5); mot += M(x, y);
     }
-    let v = sum/steps + 0.35*mot/steps;
+    let v = sum/steps + (quiet ? 0.25 : 1.3)*mot/steps;
     for (const ea of limb) { let dd = Math.abs(ang - ea); dd = Math.min(dd, 2*Math.PI - dd); if (dd < 0.3) v *= 0.35; }
     for (const ea of body) { let dd = Math.abs(ang - ea); dd = Math.min(dd, 2*Math.PI - dd); if (dd < 0.45) v *= 0.2; }
     // in the stance and load the bat is held up: the barrel is above the hands, never hanging down
@@ -223,6 +228,22 @@ function batScores(k, W, H, dets, quiet) {
   return out;
 }
 
+async function probeFps() {
+  if (!vid.requestVideoFrameCallback) return 30;
+  return new Promise(res => {
+    const ts = []; let done = false;
+    const finish = () => { if (done) return; done = true; vid.pause(); const d = []; for (let i = 1; i < ts.length; i++) { const x = ts[i] - ts[i-1]; if (x > 0.001) d.push(x); } d.sort((a, b) => a - b); const m = d.length ? d[d.length >> 1] : 1/30; res(clamp(Math.round(1/m), 24, 240)); };
+    const cb = (now, md) => { ts.push(md.mediaTime); if (ts.length >= 14) finish(); else vid.requestVideoFrameCallback(cb); };
+    vid.requestVideoFrameCallback(cb); vid.playbackRate = 1; vid.play().catch(() => finish()); setTimeout(finish, 1500);
+  }).then(async f => { await seek(0); return f; });
+}
+// turn the solved bat angles into tips (uses the user's taps when there are any)
+function applyBatPath(seq) {
+  const b = st.batCtx, nz = b.nz, path = solveBat2(b.scores, b.allow, b.anchors);
+  const tl = b.taps.slice().sort((x, y) => x - y), L = tl.length ? clamp(tl[tl.length >> 1], 0.3*nz.H, 0.7*nz.H) : b.L;
+  seq.batTips = b.hands.map(([hx, hy], i) => { const p = path[i], a = p.angleIdx*5*Math.PI/180; return { x: (hx + Math.cos(a)*L - nz.originX)*nz.fwd/nz.H, y: (hy + Math.sin(a)*L - nz.groundY)/nz.H, c: p.conf }; });
+  addBatSpeed(seq); seq.batOk = seq.batOk || Object.keys(b.anchors).length >= 2;
+}
 async function analyzeFile(file, opts = {}) {
   if (st.busy) return;
   st.busy = true; st.cancel = false; pause();
@@ -268,7 +289,10 @@ async function analyzeFile(file, opts = {}) {
       const pre = (kind === 'hit' ? 1.9 : 2.4)*slow, post = (kind === 'hit' ? 1.0 : 1.1)*slow;
       tA = Math.max(0, pk - pre); tB = Math.min(dur, pk + post);
     }
-    const perReal = slow > 1 ? 60 : 30, mstep = slow/perReal;
+    msg('Reading the frame rate…', 0.28);
+    const nativeFps = await probeFps();
+    // every frame the video has, up to ~200 frames for the swing window
+    const mstep = Math.max(1/nativeFps, (tB - tA)/200), perReal = slow/mstep;
     const times = []; for (let t = tA; t <= tB + 1e-6; t += mstep) times.push(t);
     const raw = [], dets = []; let found = 0; batState.prev = null; batState.lens = [];
     for (let i = 0; i < times.length; i++) {
@@ -289,25 +313,23 @@ async function analyzeFile(file, opts = {}) {
     const seq = { ...nz, fps: perReal, slow, vw: W, vh: H, kind }; // H stays the player's body height in pixels
     if (kind === 'hit') {
       // second look at each frame for the bat, now that the joints are cleaned up
-      const scores = [];
-      batState.prev = null;
-      const hs = clean.map((k, i) => { const p = clean[Math.max(0, i-1)]; return Math.hypot((k[27]+k[30])/2 - (p[27]+p[30])/2, (k[28]+k[31])/2 - (p[28]+p[31])/2)/nz.H; });
-      const hsS = gauss1d(hs, 2), quietTh = 0.012*(30/perReal)*slow;
-      // quiet = before the hands really start the swing (stance, load, stride)
-      const firstFast = hsS.findIndex(v => v > quietTh*2.5);
+      const grays = [];
       for (let i = 0; i < times.length; i++) {
         if (st.cancel) throw new Error('cancel');
-        await seek(times[i]);
-        scores.push(batScores(clean[i], W, H, dets[i], (firstFast < 0 || i < firstFast) && hsS[i] < quietTh*2.5));
+        await seek(times[i]); grays.push(grabGray(W, H));
         msg('Following the bat… frame ' + (i+1) + ' of ' + times.length, 0.95 + 0.04*(i+1)/times.length);
       }
-      const allow = hs.map(v => 2 + 80*v*(30/perReal)*slow);
-      const path = solveBat(scores, allow);
+      batState.lens = batState.lens || [];
+      const hs = clean.map((k, i) => { const p = clean[Math.max(0, i-1)]; return Math.hypot((k[27]+k[30])/2 - (p[27]+p[30])/2, (k[28]+k[31])/2 - (p[28]+p[31])/2)/nz.H; });
+      const hsS = gauss1d(hs, 2), quietTh = 0.36/perReal; // ~0.36 body heights per second
+      const firstFast = hsS.findIndex(v => v > quietTh*2.5);
+      const scores = clean.map((k, i) => batScores(k, W, H, dets[i], (firstFast < 0 || i < firstFast) && hsS[i] < quietTh*2.5, grays[i], grays[i-1], grays[i+1]));
+      const allow = hs.map(v => 2 + 80*v);
       const lens = batState.lens.slice().sort((a, b) => a - b);
       const L = (lens.length >= 3 ? clamp(lens[lens.length >> 1], 0.32, 0.62) : 0.45)*nz.H;
-      seq.batTips = clean.map((k, i) => { const p = path[i]; if (!scores[i]) return null; const hx = (k[27] + k[30])/2, hy = (k[28] + k[31])/2; const a = p.angleIdx*5*Math.PI/180; const tx = hx + Math.cos(a)*L, ty = hy + Math.sin(a)*L; return { x: (tx - nz.originX)*nz.fwd/nz.H, y: (ty - nz.groundY)/nz.H, c: p.conf }; });
-      addBatSpeed(seq);
-    }
+      st.batCtx = { scores, allow, hands: clean.map(k => [(k[27] + k[30])/2, (k[28] + k[31])/2]), L, nz, anchors: {}, taps: [] };
+      applyBatPath(seq);
+    } else st.batCtx = null;
     st.times = times; st.seq = seq;
     st.res = analyzeMotion(seq, kind);
     afterAnalysis();
@@ -411,7 +433,7 @@ function drawThumb(el, mo) {
     ctx.fillStyle = 'rgba(7,12,18,.25)'; ctx.fillRect(0, 0, w, h);
   }
   const f = st.seq.frames[mo.i], t = st.seq.batTips && st.seq.batTips[mo.i];
-  if (t && t.c > 0.2 && st.mode === 'hit') { const hd = map((f[18] + f[20])/2, (f[19] + f[21])/2), tp = map(t.x, t.y); ctx.strokeStyle = '#D9A55B'; ctx.lineCap = 'round'; ctx.lineWidth = Math.max(2, s*0.02); ctx.beginPath(); ctx.moveTo(hd[0], hd[1]); ctx.lineTo(tp[0], tp[1]); ctx.stroke(); }
+  if (t && t.c > 0.2 && st.mode === 'hit') { const hd = map((f[18] + f[20])/2, (f[19] + f[21])/2), tp = map(t.x, t.y); ctx.strokeStyle = '#FF4FA3'; ctx.lineCap = 'round'; ctx.lineWidth = Math.max(2, s*0.02); ctx.beginPath(); ctx.moveTo(hd[0], hd[1]); ctx.lineTo(tp[0], tp[1]); ctx.stroke(); }
   drawSkel(ctx, f, map, { colors: { l: css('--lead'), b: css('--back'), c: '#E9EEF4' }, scale: s, leadLeft: st.seq.leadLeft });
 }
 function focusMoment(k) {
@@ -420,6 +442,27 @@ function focusMoment(k) {
   const zr = $('zoomReset'); zr.hidden = false; zr.textContent = 'Zoomed: ' + mo.title + ' · Reset';
   $('stage').scrollIntoView({ behavior: 'smooth', block: 'center' }); draw();
 }
+const batFix = { on: false };
+function setBatFix(on) {
+  batFix.on = on && !!st.batCtx; $('batFix').setAttribute('aria-pressed', batFix.on); $('batFixBar').hidden = !batFix.on;
+  if (batFix.on) { pause(); updateBatFixBar(); }
+  $('stage').classList.toggle('tapping', batFix.on);
+}
+function updateBatFixBar() { const n = st.batCtx ? Object.keys(st.batCtx.anchors).length : 0; $('batFixCount').textContent = n ? n + (n === 1 ? ' tap' : ' taps') + ' so far.' : 'No taps yet.'; }
+function refreshAfterBat() {
+  const fr = st.frame; st.res = analyzeMotion(st.seq, st.mode); st.idealFrames = st.res.ideal; computeEnergy(); computeBoxes(); st.moments = keyMoments();
+  buildScrub(); renderReport(); seekFrame(fr); buildMomentThumbs();
+}
+$('cv').addEventListener('click', e => {
+  if (!batFix.on || !st.batCtx || !st.hasVideo) return;
+  const { w, h, dpr } = canvasCtx(); const r = $('cv').getBoundingClientRect();
+  const x = (e.clientX - r.left)*dpr, y = (e.clientY - r.top)*dpr, qx = (x - zoom.tx)/zoom.s, qy = (y - zoom.ty)/zoom.s;
+  const fit = videoFit(st.seq.vw, st.seq.vh, w, h), px = (qx - fit.x)/fit.s, py = (qy - fit.y)/fit.s;
+  const i = Math.round(st.frame), [hx, hy] = st.batCtx.hands[i], dist = Math.hypot(px - hx, py - hy);
+  if (dist < 0.1*st.batCtx.nz.H) { toast('Tap the far end of the bat, not the hands.'); return; }
+  st.batCtx.anchors[i] = ((Math.round(Math.atan2(py - hy, px - hx)*DEG/5) % NA) + NA) % NA; st.batCtx.taps.push(dist);
+  applyBatPath(st.seq); refreshAfterBat(); updateBatFixBar();
+});
 function afterAnalysis(quiet) {
   const r = st.res;
   st.focusFix = null; st.idealFrames = r.ideal;
@@ -427,6 +470,7 @@ function afterAnalysis(quiet) {
   st.frame = r.phases.start; st.fpos = st.frame;
   if (!st.compareRec && st.source !== 'demo') { const b = baselineFor(st.mode); st.compareRec = b && b.id !== st.recId ? b : proRecord(st.mode); }
   prepCompare();
+  if (st.source !== 'video') st.batCtx = null; setBatFix(false);
   computeBoxes(); zoom.focus = null; $('zoomReset').hidden = true; st.moments = keyMoments();
   setStageMeta(); sizeStage(); buildScrub(); renderReport(); seekFrame(r.phases.key); buildMomentThumbs();
   if (!quiet) { setTab('Analyze'); toast('Analysis ready. Score ' + r.overall + '.'); }
@@ -566,8 +610,9 @@ function draw() {
   if (st.layers.bat && tips && st.mode === 'hit') {
     ctx.save(); ctx.lineCap = 'round';
     const a = Math.max(r.phases.start, i - 14);
-    for (let k = a + 1; k <= i; k++) { const p = tips[k-1], q = tips[k]; if (!p || !q || p.c < 0.2 || q.c < 0.2) continue; const t = (k - a)/(i - a + 1); ctx.strokeStyle = `rgba(232,180,74,${0.15 + 0.7*t})`; ctx.lineWidth = Math.max(2, scale*0.01)*(0.5 + t); const P1 = map(p.x, p.y), Q1 = map(q.x, q.y); ctx.beginPath(); ctx.moveTo(P1[0], P1[1]); ctx.lineTo(Q1[0], Q1[1]); ctx.stroke(); }
-    const b = tips[i]; if (b && b.c > 0.2) { const hnd = map((f[18]+f[20])/2, (f[19]+f[21])/2), tp = map(b.x, b.y); ctx.strokeStyle = '#D9A55B'; ctx.lineWidth = Math.max(3, scale*0.022); ctx.beginPath(); ctx.moveTo(hnd[0], hnd[1]); ctx.lineTo(tp[0], tp[1]); ctx.stroke(); ctx.strokeStyle = 'rgba(7,12,18,.7)'; ctx.lineWidth = Math.max(1, scale*0.004); ctx.stroke(); }
+    for (let k = a + 1; k <= i; k++) { const p = tips[k-1], q = tips[k]; if (!p || !q || p.c < 0.2 || q.c < 0.2) continue; const t = (k - a)/(i - a + 1); ctx.strokeStyle = `rgba(255,79,163,${0.15 + 0.7*t})`; ctx.lineWidth = Math.max(2, scale*0.01)*(0.5 + t); const P1 = map(p.x, p.y), Q1 = map(q.x, q.y); ctx.beginPath(); ctx.moveTo(P1[0], P1[1]); ctx.lineTo(Q1[0], Q1[1]); ctx.stroke(); }
+    if (st.batCtx && st.batCtx.anchors[i] != null && tips[i]) { const tp = map(tips[i].x, tips[i].y); ctx.save(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2*dpr; ctx.beginPath(); ctx.arc(tp[0], tp[1], 9*dpr, 0, Math.PI*2); ctx.stroke(); ctx.restore(); }
+    const b = tips[i]; if (b && b.c > 0.2) { const hnd = map((f[18]+f[20])/2, (f[19]+f[21])/2), tp = map(b.x, b.y); ctx.strokeStyle = '#FF4FA3'; ctx.lineWidth = Math.max(3, scale*0.022); ctx.beginPath(); ctx.moveTo(hnd[0], hnd[1]); ctx.lineTo(tp[0], tp[1]); ctx.stroke(); ctx.strokeStyle = 'rgba(7,12,18,.7)'; ctx.lineWidth = Math.max(1, scale*0.004); ctx.stroke(); }
     ctx.restore();
   }
   if (st.layers.skel) drawSkel(ctx, f, map, { colors, scale, leadLeft: st.seq.leadLeft, energy: st.layers.energy ? st.energy[i] : null });
@@ -649,6 +694,7 @@ function setStageMeta() {
   $('srcTag').textContent = st.source === 'demo' ? 'Pro model' : st.source === 'library' ? 'From library' : 'Your video';
   document.querySelector('[data-layer="video"]').hidden = !st.hasVideo;
   document.querySelector('[data-layer="bat"]').hidden = st.mode !== 'hit';
+  $('batFix').hidden = !(st.batCtx && st.hasVideo && st.mode === 'hit' && st.source === 'video');
   document.querySelector('[data-layer="past"]').hidden = !st.compareRec;
   const lg = [`<span><i style="background:var(--lead)"></i>Lead side</span>`, `<span><i style="background:var(--back)"></i>${st.mode === 'hit' ? 'Back side' : 'Throwing side'}</span>`];
   if (st.res && st.res.fixes.length) lg.push(`<span><i class="dash"></i>Fixed form</span>`);
@@ -862,7 +908,7 @@ function drawGameDay(ts) {
   const s = Math.min(w/(x1 - x0 + 0.3), h/(-y0 + 0.3)); const ox = w/2 - (x0 + x1)/2*s, oy = h - 0.12*s;
   ctx.strokeStyle = 'rgba(233,238,244,.35)'; ctx.lineWidth = 2*dpr; ctx.beginPath(); ctx.moveTo(0, oy); ctx.lineTo(w, oy); ctx.stroke();
   const tips = gd.rec && gd.rec.bat ? gd.rec.bat : (gd.demo && gd.demo.batTips ? gd.demo.batTips.map(t => t ? [t.x*1000, t.y*1000] : 0) : null);
-  if (tips && st.mode === 'hit') { const tp = tips[i]; if (tp) { const hx = (f[18]+f[20])/2, hy = (f[19]+f[21])/2; ctx.strokeStyle = '#D9A55B'; ctx.lineWidth = Math.max(3, s*0.022); ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(ox + hx*s, oy + hy*s); ctx.lineTo(ox + tp[0]/1000*s, oy + tp[1]/1000*s); ctx.stroke(); } }
+  if (tips && st.mode === 'hit') { const tp = tips[i]; if (tp) { const hx = (f[18]+f[20])/2, hy = (f[19]+f[21])/2; ctx.strokeStyle = '#FF4FA3'; ctx.lineWidth = Math.max(3, s*0.022); ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(ox + hx*s, oy + hy*s); ctx.lineTo(ox + tp[0]/1000*s, oy + tp[1]/1000*s); ctx.stroke(); } }
   drawSkel(ctx, f, (x, y) => [ox + x*s, oy + y*s], { colors: { l: css('--lead'), b: css('--back'), c: '#E9EEF4' }, scale: s, leadLeft: gd.rec ? gd.rec.leadLeft : true });
   const phases = gd.rec ? gd.rec.phases : gd.res.phases.list.map(([n, k]) => [n, k - a]);
   let nm = phases[0][0]; for (const [n, k] of phases) if (i - a >= k) nm = n;
@@ -909,6 +955,9 @@ $('upIn').onchange = onFile;
   $('pickHelpClose').onclick = () => { $('pickHelp').hidden = true; };
 }
 $('procCancel').onclick = () => { st.cancel = true; };
+$('batFix').onclick = () => setBatFix(!batFix.on);
+$('batFixDone').onclick = () => { setBatFix(false); toast('Bat path updated from your taps.'); };
+$('batFixClear').onclick = () => { if (!st.batCtx) return; st.batCtx.anchors = {}; st.batCtx.taps = []; applyBatPath(st.seq); refreshAfterBat(); updateBatFixBar(); };
 $('zoomReset').onclick = () => { zoom.focus = null; $('zoomReset').hidden = true; draw(); };
 $('zoomFollow').onclick = e => { zoom.follow = !zoom.follow; e.currentTarget.setAttribute('aria-pressed', zoom.follow); if (zoom.follow) { zoom.focus = null; $('zoomReset').hidden = true; } draw(); };
 $('bPlay').onclick = () => st.playing ? pause() : play();

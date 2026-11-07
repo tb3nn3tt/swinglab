@@ -122,6 +122,50 @@ function solveBat(scores, allow) {
   return path.map((a, i) => ({ angleIdx: a, conf: norm[i] ? norm[i].conf*clamp(norm[i].v[a], 0, 1) : 0 }));
 }
 
+/* bat path v2: state = (previous angle, angle), so the solver knows the bat's turning speed and keeps it smooth:
+   the bat speeds up and slows down gradually and does not flip back and forth. anchors = frames the user tapped. */
+function solveBat2(scores, allow, anchors) {
+  const n = scores.length, A = NA, wrap = d => ((d + A/2) % A + A) % A - A/2;
+  const unary = scores.map((s, i) => {
+    const u = new Float32Array(A);
+    if (s) { const arr = Array.from(s), m = percentile(arr, 0.5), mx = Math.max(...arr), den = (mx - m) || 1, conf = clamp((mx - m)/(m + 8), 0, 1); for (let a = 0; a < A; a++) u[a] = -((s[a] - m)/den)*conf; }
+    const an = anchors && anchors[i];
+    if (an != null) for (let a = 0; a < A; a++) { const d = Math.abs(wrap(a - an)); u[a] += d <= 1 ? -6 : 8 + d*0.2; }
+    return u;
+  });
+  let cost = new Float32Array(A*A).fill(Infinity), limPrev = 0;
+  for (let a = 0; a < A; a++) cost[a*A + a] = unary[0][a];
+  const backs = [null];
+  for (let i = 1; i < n; i++) {
+    const al = Math.max(1.5, Math.min(16, allow ? allow[i] : 8)), lim = Math.min(18, Math.ceil(al*1.8)), acc = Math.max(1.2, al*0.6);
+    // how fast the bat should be turning right now, from how fast the hands move (direction unknown, speed known)
+    const e = Math.max(0, (al - 2)*0.85), sig = 1.5 + 0.35*e;
+    const nc = new Float32Array(A*A).fill(Infinity), bk = new Int8Array(A*A);
+    for (let p = 0; p < A; p++) {
+      for (let dq = -limPrev; dq <= limPrev; dq++) {
+        const q = (p - dq + A) % A, c0 = cost[q*A + p]; if (c0 === Infinity) continue;
+        for (let d = -lim; d <= lim; d++) {
+          const a = (p + d + A) % A, k = p*A + a;
+          const v = c0 + 0.5*(d/al)**2 + 0.6*((d - dq)/acc)**2 + 0.45*((Math.abs(d) - e)/sig)**2;
+          if (v < nc[k]) { nc[k] = v; bk[k] = q; }
+        }
+      }
+      for (let d = -lim; d <= lim; d++) { const a = (p + d + A) % A, k = p*A + a; if (nc[k] !== Infinity) nc[k] += unary[i][a]; }
+    }
+    cost = nc; backs.push(bk); limPrev = lim;
+  }
+  let best = 0; for (let k = 1; k < A*A; k++) if (cost[k] < cost[best]) best = k;
+  const path = new Array(n); let p = Math.floor(best/A), a = best % A;
+  for (let i = n - 1; i >= 1; i--) { path[i] = a; const q = backs[i][p*A + a]; a = p; p = q; }
+  path[0] = a;
+  return path.map((ai, i) => {
+    const s = scores[i]; let conf = 0;
+    if (anchors && anchors[i] != null) conf = 1;
+    else if (s) { const arr = Array.from(s), m = percentile(arr, 0.5), mx = Math.max(...arr), den = (mx - m) || 1; conf = clamp((mx - m)/(m + 8), 0, 1)*clamp((s[ai] - m)/den, 0, 1); }
+    return { angleIdx: ai, conf: Math.max(conf, 0.25) };
+  });
+}
+
 /* ---------- phase detection ---------- */
 function speedSeries(frames, fps, fn) { const p = frames.map(fn); const vx = deriv(p.map(q=>q[0]), fps), vy = deriv(p.map(q=>q[1]), fps); return gauss1d(vx.map((v,i)=>Math.hypot(v, vy[i])), 0.8); }
 function rotationSeries(frames, fps, a, b, refEnd) {
@@ -449,4 +493,4 @@ function addBatSpeed(seq) {
   seq.batOk = ok > 0.55;
 }
 
-if (typeof module !== 'undefined') module.exports = { NJ, JN, sideMap, cleanRaw, normalize, toPixel, solveBat, detectPhases, analyzeMotion, packRecord, seqFromRecord, alignIndex, lerpFrame, compareRecords, buildDemo, buildPro, buildFaulty, buildModel, MODELS, addBatSpeed, NA, angAt, P, mid, gauss1d, deriv, speedSeries };
+if (typeof module !== 'undefined') module.exports = { NJ, JN, sideMap, cleanRaw, normalize, toPixel, solveBat, solveBat2, detectPhases, analyzeMotion, packRecord, seqFromRecord, alignIndex, lerpFrame, compareRecords, buildDemo, buildPro, buildFaulty, buildModel, MODELS, addBatSpeed, NA, angAt, P, mid, gauss1d, deriv, speedSeries };

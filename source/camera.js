@@ -17,7 +17,7 @@ async function openCam() {
 async function startStream() {
   stopStream();
   try {
-    cam.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: cam.facing }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 60, max: 60 } } });
+    cam.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: cam.facing }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 120 } } });
   } catch (e) {
     camStatus(e && e.name === 'NotAllowedError' ? 'Camera access is blocked. Allow the camera for this site in your browser settings, then tap Record again.' : 'Could not open the camera. Close other apps using it and try again.');
     return false;

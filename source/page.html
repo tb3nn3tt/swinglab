@@ -102,6 +102,9 @@ p { margin: 0; }
 .rec-btn.on i { width: 28px; height: 28px; border-radius: 6px; }
 .cam-delay { justify-self: end; display: flex; align-items: center; gap: 6px; font-size: 13.5px; }
 @media (prefers-reduced-motion: reduce) { .rec-btn i { transition: none; } }
+.batfix { border: 1px solid #FF4FA3; background: color-mix(in srgb, #FF4FA3 10%, transparent); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.batfix .m-actions { align-items: center; }
+.stage.tapping canvas { cursor: crosshair; }
 .zoom-reset { position: absolute; right: 10px; top: 10px; z-index: 3; border: 0; border-radius: 999px; padding: 6px 12px; font-size: 12.5px; font-weight: 600; background: rgba(232,180,74,.95); color: #1A1206; max-width: calc(100% - 140px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .moments { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x proximity; }
 .moment { flex: none; width: 148px; display: flex; flex-direction: column; gap: 4px; text-align: left; border: 1px solid var(--line); background: var(--surface-2); border-radius: 12px; padding: 6px 6px 10px; scroll-snap-align: start; }
@@ -337,17 +340,22 @@ i.dot.good { background: var(--good); } i.dot.watch { background: var(--watch); 
               <span class="frame-no" id="fNo">0 / 0</span>
             </div>
             <div class="chips" role="group" aria-label="Playback speed"><span class="row-lbl" style="align-self:center;margin-right:4px">Speed</span>
-              <button class="chip" data-speed="1" aria-pressed="false">1×</button><button class="chip" data-speed="0.5" aria-pressed="true">½×</button><button class="chip" data-speed="0.25" aria-pressed="false">¼×</button>
+              <button class="chip" data-speed="1" aria-pressed="false">1×</button><button class="chip" data-speed="0.5" aria-pressed="true">½×</button><button class="chip" data-speed="0.25" aria-pressed="false">¼×</button><button class="chip" data-speed="0.125" aria-pressed="false">⅛×</button>
             </div>
             <div class="chips" id="phaseChips" aria-label="Jump to phase"></div>
             <div class="chips" id="layerChips" aria-label="Layers">
               <button class="chip" data-layer="video" aria-pressed="true">Video</button>
               <button class="chip" data-layer="skel" aria-pressed="true"><i class="sw" style="background:var(--lead)"></i>Skeleton</button>
-              <button class="chip" data-layer="bat" aria-pressed="true">Bat path</button>
+              <button class="chip" data-layer="bat" aria-pressed="true"><i class="sw" style="background:#FF4FA3"></i>Bat path</button>
               <button class="chip" data-layer="energy" aria-pressed="false">Energy flow</button>
               <button class="chip" data-layer="ideal" aria-pressed="true"><i class="sw" style="background:var(--ghost)"></i>Fixed form</button>
               <button class="chip" data-layer="past" aria-pressed="true"><i class="sw" style="background:var(--past)"></i>Past rep</button>
               <button class="chip" id="zoomFollow" aria-pressed="false">Follow player (zoom)</button>
+              <button class="chip" id="batFix" aria-pressed="false" hidden>Fix the bat</button>
+            </div>
+            <div class="batfix" id="batFixBar" hidden>
+              <p class="small"><b>Tap the end of the bat on the video.</b> Then step to another frame with the arrows and tap again. Taps at the stance, launch, contact and finish are plenty; the app fills in every frame between them.</p>
+              <div class="m-actions"><span class="small muted" id="batFixCount">No taps yet.</span><button class="btn primary" type="button" id="batFixDone">Done</button><button class="btn ghost" type="button" id="batFixClear">Clear taps</button></div>
             </div>
             <div class="legend" id="legend"></div>
           </div>
