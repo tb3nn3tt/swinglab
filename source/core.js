@@ -143,18 +143,25 @@ function detectSides(clean, kind, fps, tipsPx) {
     const dx = clean[Math.min(n-1, pk + 3)][j*3] - clean[Math.max(0, pk - 3)][j*3];
     return { leadLeft: !throwLeft, fwd: Math.sign(dx) || (throwLeft ? -Math.sign(dl) : Math.sign(dl)) || 1, conf: Math.abs(ml - mr)/Math.max(ml, mr, 1e-6), how: 'throwing hand' };
   }
+  // Which way is the pitcher? Three independent reads, weighted:
+  //  1. the hands: the first fast move of the swing carries them toward the pitcher (after contact they come back around)
+  //  2. the stride: the foot that travels before the swing travels toward the pitcher
+  //  3. the stance: the hands start on the catcher side of the body
+  // (The bat after contact is not used: in a front view the follow-through points the barrel back at the catcher.)
   const hm = clean.map(f => [(f[27] + f[30])/2, (f[28] + f[31])/2]);
-  const hs = gauss1d(hm.map((h, i) => { const p = hm[Math.max(0, i-1)]; return Math.hypot(h[0] - p[0], h[1] - p[1]); }), 2);
-  let pk = 0; hs.forEach((v, i) => { if (v > hs[pk]) pk = i; });
-  let sx = 0, cnt = 0;
-  if (tipsPx) for (let i = pk; i <= Math.min(n - 1, pk + Math.round(0.33*fps)); i++) if (tipsPx[i]) { sx += tipsPx[i][0] - hm[i][0]; cnt++; }
-  let pitcher = Math.sign(sx), how = 'bat after contact';
-  if (!pitcher || !cnt) { // fall back to the stride: the foot that travels farther, in the direction it travels
-    const tr = j => { const x0 = clean[0][j*3]; let best = 0; for (const f of clean) { const d = f[j*3] - x0; if (Math.abs(d) > Math.abs(best)) best = d; } return best; };
-    const a = tr(15), b = tr(16); pitcher = Math.sign(Math.abs(a) >= Math.abs(b) ? a : b) || 1; how = 'stride';
-  }
+  const hs = gauss1d(hm.map((h, i) => { const p = hm[Math.max(0, i-1)]; return Math.hypot(h[0] - p[0], h[1] - p[1]); }), 1.5);
+  const top = Math.max(...hs), s0 = Math.max(1, hs.findIndex(v => v >= 0.45*top)), s1 = Math.min(n - 1, s0 + Math.max(2, Math.round(0.15*fps)));
+  let hx = 0; for (let i = s0; i <= s1; i++) hx += hm[i][0] - hm[i-1][0];
+  const bodyH = Math.max(1, ...clean.map(f => Math.abs((f[45] + f[48])/2 - f[1])));
+  const tr = j => clean[Math.min(n - 1, s0)][j*3] - clean[0][j*3];
+  const ta = tr(15), tb = tr(16), stride = Math.abs(ta) >= Math.abs(tb) ? ta : tb;
+  const st0 = clean.slice(0, Math.max(2, Math.min(s0, Math.round(n*0.25))));
+  const hipX = st0.reduce((q, f) => q + (f[33] + f[36])/2, 0)/st0.length, handX = st0.reduce((q, f) => q + (f[27] + f[30])/2, 0)/st0.length;
+  const vHands = clamp(hx/(0.15*bodyH), -1, 1), vStride = clamp(stride/(0.06*bodyH), -1, 1), vStance = clamp((hipX - handX)/(0.05*bodyH), -1, 1);
+  const vote = 2*vHands + 1.5*vStride + 0.75*vStance;
+  let pitcher = Math.sign(vote) || 1, how = Math.abs(vHands) >= Math.abs(vStride) ? 'hand path' : 'stride';
   const leadLeft = dl*pitcher > 0;
-  return { leadLeft, fwd: pitcher, conf: Math.min(1, Math.abs(sx)/Math.max(1, cnt)/40), how };
+  return { leadLeft, fwd: pitcher, conf: Math.min(1, Math.abs(vote)/4.25), how, votes: { hands: vHands, stride: vStride, stance: vStance } };
 }
 
 /* ---------- bat path from per-frame ray scores (dynamic programming) ---------- */
@@ -279,7 +286,7 @@ function fgMap(rgb, B) {
 }
 // per-angle bat score from the foreground (72 bins); hx,hy and elbows in these image pixels; Lmax in these pixels
 function fgBatScores(fg, gray, w, h, hx, hy, Lmax, elbows) {
-  const s = w/360, nr = 40, LBF = [0.08, 0.25, 0.42, 0.58, 0.74, 0.88, 1.0].map(v => Math.max(0, Math.round(v*nr) - 1));
+  const s = w/360, nr = 40, LBV = [0.08, 0.25, 0.42, 0.58, 0.74, 0.88, 1.0], LBF = LBV.map(v => Math.max(0, Math.round(v*nr) - 1)), bestL = new Float32Array(NA).fill(1);
   const fgd = maxFilter(fg, w, h, Math.max(1, Math.round(2*s)));
   const at = (a, x, y) => { const xi = Math.round(x), yi = Math.round(y); if (xi < 0 || yi < 0 || xi >= w || yi >= h) return 0; return a[yi*w + xi]; };
   const atG = (x, y) => { const xi = clamp(Math.round(x), 0, w - 1), yi = clamp(Math.round(y), 0, h - 1); return gray[yi*w + xi]; };
@@ -290,7 +297,7 @@ function fgBatScores(fg, gray, w, h, hx, hy, Lmax, elbows) {
     for (let a = 0; a < NA; a++) {
       const ang = a*5*Math.PI/180, cx = Math.cos(ang), cy = Math.sin(ang);
       const hide = arm.filter(q => { let dd = Math.abs(ang - q.a); dd = Math.min(dd, 2*Math.PI - dd); return dd < 0.3; });
-      let cs = 0, bi = 0, top = -1e9;
+      let cs = 0, bi = 0, top = -1e9, topL = 1;
       for (let k = 0; k < nr; k++) {
         const r = (0.22 + 0.78*k/(nr - 1))*Lmax, x = x0 + cx*r, y = y0 + cy*r;
         let v;
@@ -304,13 +311,14 @@ function fgBatScores(fg, gray, w, h, hx, hy, Lmax, elbows) {
           v = (ridge - tR) + (edge - tE);
         }
         cs += v;
-        if (k === LBF[bi]) { const sc = cs/nr*8 - pen; if (sc > top) top = sc; bi++; }
+        if (k === LBF[bi]) { const sc = cs/nr*8 - pen; if (sc > top) { top = sc; topL = LBV[bi]; } bi++; }
       }
-      if (top > best[a]) best[a] = top;
+      if (top > best[a]) { best[a] = top; bestL[a] = topL; }
     }
   }
   const med = percentile(Array.from(best), 0.5), out = new Float32Array(NA);
   for (let a = 0; a < NA; a++) out[a] = Math.max(0, best[a] - med)*50;
+  out.len = bestL; // how much of the bat shows along each direction (it looks short when it points at the camera)
   return out;
 }
 
@@ -381,7 +389,11 @@ function detectPhases(seq, kind) {
        or a foot drawn back during the load is never mistaken for it. +x is toward the pitcher. */
     const hm = f => mid(f, 9, 10);
     const hands = speedSeries(frames, fps, hm);
-    const Hpk = argmax(hands, Math.min(n-1, sec(0.25)), Math.max(0, n-1-sec(0.05)));
+    const h0 = Math.min(n-1, sec(0.25)), h1 = Math.max(0, n-1-sec(0.05));
+    // the hands peak on the way to the ball; in a front view they speed up again coming back around in the follow-through,
+    // so take the FIRST big peak, not the biggest
+    const Hmax = argmax(hands, h0, h1); let Hpk = Hmax;
+    for (let i = Math.max(h0, 1); i < Hmax; i++) if (hands[i] >= 0.6*hands[Hmax] && hands[i] >= hands[i-1] && hands[i] >= hands[i+1]) { Hpk = i; break; }
     // contact: peak barrel speed around the hands' peak; extension: barrel reaching out toward the pitcher after it
     let C = Math.min(n-1, Hpk + 1), E;
     const tips = seq.batTips, useBat = tips && seq.batOk && seq.batSpeed;
@@ -697,6 +709,55 @@ function compareRecords(curMetrics, rec) {
 }
 
 /*PRO*/
+/* ---------- barrel through the zone (front view: the pitch line runs across the picture) ----------
+   Sweet spot = 80% of the way from the hands to the tip (about 6 in from the end of the barrel, like the sensors use).
+   Zone height comes from the stance (rulebook: hollow under the kneecap up to halfway between shoulders and belt);
+   along the pitch line we use a hitting zone from the middle of the body to well out in front of the front foot.
+   "On the ball's path" = the sweet spot is inside that box and moving toward the pitcher within 30 degrees of level. */
+function barrelZone(seq, phases, heightIn) {
+  const F = seq.frames, T = seq.batTips; if (!T || !F || !phases) return null;
+  const ph = nm => (phases.list.find(p => p[0] === nm) || [null, null])[1];
+  const contact = phases.key, launch = ph('Launch') ?? Math.max(phases.start, contact - Math.round(0.15*seq.fps));
+  const ext = ph('Extension') ?? contact + Math.round(0.08*seq.fps), fin = Math.min(phases.end, (ph('Finish') ?? ext + Math.round(0.2*seq.fps)));
+  const st0 = ph('Load') ?? ph('Stance') ?? phases.start, f0 = F[st0], fc = F[contact];
+  if (!f0 || !fc) return null;
+  const Y = (f, j) => f[j*2+1], X = (f, j) => f[j*2];
+  const shY = (Y(f0, 5) + Y(f0, 6))/2, hipY = (Y(f0, 11) + Y(f0, 12))/2, kneeY = (Y(f0, 13) + Y(f0, 14))/2;
+  const top = (shY + hipY)/2 - 0.02, bot = kneeY + 0.02; // y grows downward
+  const frontAnk = Math.max(X(fc, 15), X(fc, 16)), midX = (X(fc, 11) + X(fc, 12))/2;
+  const zone = { top, bot, x0: midX - 0.12, x1: frontAnk + 0.35 };
+  const hand = i => { const f = F[i]; return f ? { x: (f[18] + f[20])/2, y: (f[19] + f[21])/2 } : null; };
+  const vec = i => { const t = T[i], h = hand(i); if (!t || !h || t.c <= 0.2) return null; return { h, vx: t.x - h.x, vy: t.y - h.y }; };
+  // sweet spot between frames (30 fps is coarse): hands and the bat's on-screen offset both move in straight lines,
+  // which also handles the bat pointing at the camera at contact (it shrinks through the hands instead of spinning)
+  const at = (i, u) => { const p = vec(i), q = vec(i + 1) || p; if (!p) return null; const L = (a, b) => a + (b - a)*u;
+    return { x: L(p.h.x, q.h.x) + 0.8*L(p.vx, q.vx), y: L(p.h.y, q.h.y) + 0.8*L(p.vy, q.vy) }; };
+  const ss = i => at(i, 0);
+  const inBox = p => p && p.y >= top && p.y <= bot && p.x >= zone.x0 && p.x <= zone.x1;
+  const K = 8, endOn = Math.min(fin, ext + Math.round(0.05*seq.fps)); // after extension the bat wraps behind the body: not the hitting zone
+  const trail = []; let along = 0, onSteps = 0, total = 0, onPath = 0, have = 0;
+  for (let i = launch; i < fin; i++) {
+    if (!vec(i) || !vec(i + 1)) { continue; }
+    have++;
+    for (let k = 0; k < K; k++) {
+      const p = at(i, k/K), q = at(i, (k + 1)/K), dx = q.x - p.x, dy = q.y - p.y, d = Math.hypot(dx, dy), ang = Math.atan2(-dy, dx)*180/Math.PI;
+      const on = i < endOn && inBox({ x: (p.x + q.x)/2, y: (p.y + q.y)/2 }) && dx > 0 && Math.abs(ang) <= 30;
+      if (i < ext) total += d;
+      if (on) { along += dx; onSteps++; if (i < ext) onPath += d; }
+      trail.push({ i: i + (k + 1)/K, x: q.x, y: q.y, px: p.x, py: p.y, on });
+    }
+  }
+  if (have < 3) return null;
+  // attack angle: direction of the sweet spot's path through contact (straight-line fit over a frame either side)
+  const pts = []; for (let i = contact - 1; i <= contact; i++) for (let k = 0; k <= K; k++) { const p = vec(i) && vec(i + 1) ? at(i, k/K) : null; if (p) pts.push(p); }
+  let attack = null;
+  if (pts.length >= 6) { const mx = pts.reduce((q, p) => q + p.x, 0)/pts.length, my = pts.reduce((q, p) => q + p.y, 0)/pts.length; let sxx = 0, syy = 0, sxy = 0; for (const p of pts) { sxx += (p.x - mx)**2; syy += (p.y - my)**2; sxy += (p.x - mx)*(p.y - my); }
+    const th = 0.5*Math.atan2(2*sxy, sxx - syy); let dx = Math.cos(th), dy = Math.sin(th); const dir = pts[pts.length - 1].x - pts[0].x; if (dx*dir < 0) { dx = -dx; dy = -dy; }
+    if (dir > 0.01) attack = Math.atan2(-dy, dx)*180/Math.PI; }
+  const toIn = v => v*(heightIn || 70);
+  return { zone, trail, launch, contact, ext, inches: toIn(along), ms: onSteps/K/seq.fps*1000, eff: total > 0 ? onPath/total*100 : null, attack, sweet: ss };
+}
+
 function addBatSpeed(seq) {
   if (!seq.batTips) return;
   const t = seq.batTips; const ok = t.filter(b => b && b.c > 0.2).length / t.length;
@@ -708,4 +769,4 @@ function addBatSpeed(seq) {
   seq.batOk = ok > 0.55;
 }
 
-if (typeof module !== 'undefined') module.exports = { NJ, JN, sideMap, cleanRaw, unifyHands, detectSides, normalize, toPixel, solveBat, solveBat2, refineBat, swingWindow, bgModel, fgMap, fgBatScores, BAT_W, detectPhases, analyzeMotion, packRecord, seqFromRecord, alignIndex, lerpFrame, compareRecords, buildDemo, buildPro, buildFaulty, buildModel, MODELS, addBatSpeed, NA, angAt, P, mid, gauss1d, deriv, speedSeries };
+if (typeof module !== 'undefined') module.exports = { NJ, JN, sideMap, cleanRaw, unifyHands, detectSides, normalize, toPixel, solveBat, solveBat2, refineBat, swingWindow, bgModel, fgMap, fgBatScores, BAT_W, detectPhases, analyzeMotion, packRecord, seqFromRecord, alignIndex, lerpFrame, compareRecords, buildDemo, buildPro, buildFaulty, buildModel, MODELS, addBatSpeed, barrelZone, NA, angAt, P, mid, gauss1d, deriv, speedSeries };

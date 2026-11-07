@@ -161,9 +161,16 @@ details.tips ul { margin: 8px 0 0; padding-left: 18px; color: var(--ink-2); font
 .fs-cmp span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .fs-cmp select { flex: 1; min-width: 0; max-width: 260px; }
 html.fs-open, html.fs-open body { overflow: hidden; }
+.bz-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+.bz { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; min-width: 0; }
+.bz b { display: block; font: 700 26px/1.1 var(--f-display, inherit); letter-spacing: .01em; }
+.bz span { display: block; font-size: 12.5px; color: var(--ink-2); margin-top: 2px; }
+.bz .vs { color: var(--ink-2); font-size: 12px; margin-top: 4px; }
+.bz.good b { color: var(--good, #2FA36B); } .bz.watch b { color: var(--watch, #C98A14); }
 .fs-fixes { display: flex; gap: 6px; flex-wrap: wrap; width: 100%; order: 5; }
 .fs-fixes:empty { display: none; }
 .fs-fix { font: 600 13px/1.2 var(--f-body, inherit); color: inherit; background: rgba(240,101,79,.18); border: 1px solid rgba(240,101,79,.55); border-radius: 999px; padding: 6px 10px; cursor: pointer; }
+.fs-fix.zone { background: rgba(61,220,151,.14); border-color: rgba(61,220,151,.55); cursor: default; } .fs-fix.zone b { color: #3DDC97; }
 .fs-fix.watch { background: rgba(232,180,74,.16); border-color: rgba(232,180,74,.55); }
 .fs-fix b { color: #F0654F; margin-right: 4px; } .fs-fix.watch b { color: #E8B44A; }
 
@@ -367,6 +374,7 @@ i.dot.good { background: var(--good); } i.dot.watch { background: var(--watch); 
               <button class="chip" data-fsl="skel" aria-pressed="true"><i class="sw" style="background:var(--lead)"></i>Skeleton</button>
               <button class="chip" data-fsl="ideal" aria-pressed="true"><i class="sw" style="background:var(--ghost)"></i>Fixed form</button>
               <button class="chip" data-fsl="bat" aria-pressed="true"><i class="sw" style="background:#FF4FA3"></i>Bat</button>
+              <button class="chip" data-fsl="zone" aria-pressed="true"><i class="sw" style="background:#3DDC97"></i>Zone</button>
             </div>
             <div class="fs-fixes" id="fsFixes"></div>
             <label class="fs-cmp"><span><i class="sw" style="background:var(--past)"></i>Compare</span><select id="fsCmp" aria-label="Compare with"></select></label>
@@ -401,6 +409,7 @@ i.dot.good { background: var(--good); } i.dot.watch { background: var(--watch); 
                 <button class="chip" data-layer="video" aria-pressed="true">Video</button>
                 <button class="chip" data-layer="skel" aria-pressed="true"><i class="sw" style="background:var(--lead)"></i>Skeleton</button>
                 <button class="chip" data-layer="bat" aria-pressed="true"><i class="sw" style="background:#FF4FA3"></i>Bat</button>
+                <button class="chip" data-layer="zone" aria-pressed="true"><i class="sw" style="background:#3DDC97"></i>Zone</button>
                 <button class="chip" data-layer="energy" aria-pressed="false">Energy flow</button>
                 <button class="chip" data-layer="ideal" aria-pressed="true"><i class="sw" style="background:var(--ghost)"></i>Fixed form</button>
                 <button class="chip" data-layer="past" aria-pressed="true"><i class="sw" style="background:var(--past)"></i>Compare</button>

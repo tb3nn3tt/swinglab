@@ -8,7 +8,7 @@ const st = {
   mode: 'hit', tab: 'Analyze', hand: { hit: 'R', pitch: 'R' }, slow: 1,
   seq: null, res: null, source: 'demo', name: 'Sample swing', hasVideo: false, times: null,
   frame: 0, fpos: 0, playing: false, speed: 0.5,
-  layers: { video: true, skel: true, bat: true, energy: false, ideal: true, past: true },
+  layers: { video: true, skel: true, bat: true, zone: true, energy: false, ideal: true, past: true },
   focusFix: null, idealFrames: null, compareRec: null, compareOff: 0, records: [], prefs: {}, recFrameCache: new Map(),
   heightIn: 70, busy: false, cancel: false, lastTs: 0, energy: null, saved: false,
 };
@@ -257,7 +257,11 @@ async function probeFps() {
 function applyBatPath(seq) {
   const b = st.batCtx, nz = b.nz, path = refineBat(b.scores, b.allow, b.anchors, b.hsp);
   const tl = b.taps.slice().sort((x, y) => x - y), L = tl.length ? clamp(tl[tl.length >> 1], 0.3*nz.H, 0.7*nz.H) : b.L;
-  b.tipsPx = b.hands.map(([hx, hy], i) => { const a = path[i].angleIdx*5*Math.PI/180; return [hx + Math.cos(a)*L, hy + Math.sin(a)*L]; });
+  // how long the bat looks: short when it points at the camera (around contact in a front view), full when it is side-on
+  const raw = path.map((q, i) => { const ln = b.scores[i] && b.scores[i].len; if (!ln || tl.length) return null; const a = Math.round(q.angleIdx) % NA; let m = 0; for (let d = -1; d <= 1; d++) m = Math.max(m, ln[(a + d + NA) % NA]); return m*1.25; });
+  const med = raw.map((v, i) => { if (v == null) return null; const w = raw.slice(Math.max(0, i - 1), i + 2).filter(x => x != null).sort((x, y) => x - y); return w[w.length >> 1]; });
+  const lsm = gauss1d(med.map(v => v == null ? 1 : v), 0.6).map((v, i) => med[i] == null ? 1 : clamp(v, 0.15, 1.2));
+  b.tipsPx = b.hands.map(([hx, hy], i) => { const a = path[i].angleIdx*5*Math.PI/180, l = L*lsm[i]; return [hx + Math.cos(a)*l, hy + Math.sin(a)*l]; });
   seq.batTips = b.tipsPx.map(([tx, ty], i) => ({ x: (tx - nz.originX)*nz.fwd/nz.H, y: (ty - nz.groundY)/nz.H, c: path[i].conf }));
   addBatSpeed(seq); seq.batOk = seq.batOk || Object.keys(b.anchors).length >= 2;
 }
@@ -664,6 +668,7 @@ function draw() {
     const b = tips[i]; if (b && b.c > 0.2) { const hnd = map((f[18]+f[20])/2, (f[19]+f[21])/2), tp = map(b.x, b.y); ctx.strokeStyle = '#FF4FA3'; ctx.lineWidth = Math.max(3, scale*0.022); ctx.beginPath(); ctx.moveTo(hnd[0], hnd[1]); ctx.lineTo(tp[0], tp[1]); ctx.stroke(); ctx.strokeStyle = 'rgba(7,12,18,.7)'; ctx.lineWidth = Math.max(1, scale*0.004); ctx.stroke(); }
     ctx.restore();
   }
+  if (st.layers.zone && st.mode === 'hit') drawZone(ctx, map, scale, i, dpr);
   if (st.layers.skel) drawSkel(ctx, f, map, { colors, scale, leadLeft: st.seq.leadLeft, energy: st.layers.energy ? st.energy[i] : null });
   // hud
   const ph = currentPhase(i); $('hudPhase').textContent = ph;
@@ -743,6 +748,7 @@ function setStageMeta() {
   $('srcTag').textContent = st.source === 'demo' ? 'Pro model' : st.source === 'library' ? 'From library' : 'Your video';
   document.querySelector('[data-layer="video"]').hidden = !st.hasVideo;
   document.querySelector('[data-layer="bat"]').hidden = st.mode !== 'hit';
+  document.querySelector('[data-layer="zone"]').hidden = st.mode !== 'hit' || !zoneInfo();
   $('batFix').hidden = !(st.batCtx && st.hasVideo && st.mode === 'hit' && st.source === 'video');
   document.querySelector('[data-layer="past"]').hidden = !st.compareRec;
   const lg = [`<span><i style="background:var(--lead)"></i>Lead side</span>`, `<span><i style="background:var(--back)"></i>${st.mode === 'hit' ? 'Back side' : 'Throwing side'}</span>`];
@@ -771,6 +777,28 @@ const fmtVal = (v, unit) => !Number.isFinite(v) ? '—' : fmtNum(v, unit) + (uni
 const fmtShort = (v, unit) => !Number.isFinite(v) ? '—' : fmtNum(v, unit) + (unit === '°' ? '°' : unit === '% ht' ? '%' : unit === '%' ? '%' : ' ' + unit);
 const showVal = m => m.key === 'seq' ? Math.round(m.value) + '% in order' : m.key === 'balance' ? (m.value < m.lo ? 'Falling back' : m.value > m.hi ? 'Falling forward' : 'Centered') : fmtVal(m.value, m.unit);
 function gradeWord(s) { return s >= 88 ? 'Game ready' : s >= 75 ? 'Solid, with fixes' : s >= 60 ? 'Needs work' : 'Rebuild the basics'; }
+function barrelCard() {
+  const z = zoneInfo(); if (!z) return '';
+  const cz = st.compareRec ? zoneOfRecord(st.compareRec) : null, cn = st.compareRec ? esc(st.compareRec.name.replace(/ style.*$/, '')) : '';
+  const fast = st.seq.fps >= 55; // at 30 fps the barrel moves a foot or more between frames: the direction at contact is a guess
+  const aa = fast ? z.attack : null, aaS = aa == null ? '' : aa >= 5 && aa <= 20 ? 'good' : aa >= 0 && aa <= 25 ? 'watch' : 'fix';
+  const vs = (v, f) => cz && v != null && Number.isFinite(v) ? `<div class="vs">${cn}: ${f(v)}</div>` : '';
+  return `<div class="card">
+    <div class="eyebrow">Barrel path</div>
+    <h2>Through the zone</h2>
+    <p class="muted small">How long the barrel's sweet spot rides the ball's line inside the strike zone. More time on that line means more room for error on timing.</p>
+    <div class="bz-grid">
+      <div class="bz"><b>${Math.round(z.inches)} in</b><span>Barrel in the zone, along the pitch</span>${vs(cz && cz.inches, v => Math.round(v) + ' in')}</div>
+      <div class="bz"><b>${Math.round(z.ms)} ms</b><span>Time in the zone</span>${vs(cz && cz.ms, v => Math.round(v) + ' ms')}</div>
+      <div class="bz ${aaS}"><b>${aa == null ? '—' : Math.round(aa) + '°'}</b><span>Attack angle at contact · target 5° to 20° up${aa == null ? '. Needs a slo-mo clip (60 fps or more)' : ''}</span>${vs(cz && cz.attack, v => Math.round(v) + '°')}</div>
+      <div class="bz"><b>${z.eff == null ? '—' : Math.round(z.eff) + '%'}</b><span>Barrel efficiency: share of the path from launch to extension spent on the ball's line</span>${vs(cz && cz.eff, v => Math.round(v) + '%')}</div>
+    </div>
+    <div style="margin-top:10px"><button class="linkbtn" data-zoneshow="1">Show me on the video</button></div>
+    ${fast ? '' : `<p class="note" style="margin-top:8px"><b>Rough at ${Math.round(st.seq.fps)} fps:</b> the barrel crosses the zone in 2 or 3 frames, so these numbers can move a lot between swings. Film in slo-mo for numbers you can track.</p>`}
+    <p class="note" style="margin-top:8px">Estimates from a front view: the green box is the zone from his stance, the green trail is the sweet spot while it is on the ball's line. Slo-mo clips give steadier numbers. Attack angle target is Statcast's ideal range.</p>
+  </div>`;
+}
+
 function renderReport() {
   const el = $('report');
   if (!st.res) { el.innerHTML = `<div class="card"><div class="eyebrow">Scouting report</div><h2>Analyzing…</h2><p class="muted">The report appears here when tracking finishes.</p></div>`; return; }
@@ -802,6 +830,7 @@ function renderReport() {
     <h2>Tap one to zoom in</h2>
     <div class="moments" id="moments">${st.moments.map((mo, k) => `<button class="moment ${mo.status}" data-moment="${k}"><canvas data-m="${k}" aria-hidden="true"></canvas><span class="mt">${esc(mo.title)}</span><span class="ms">${mo.status === 'phase' ? esc(mo.sub) : `<span class="pill ${mo.status}">${mo.status === 'fix' ? 'Fix' : 'Watch'}</span> ${esc(mo.sub)}`}</span><span class="mtime">${(() => { const ms = Math.round((mo.i - st.res.phases.key)/st.seq.fps*1000); return ms === 0 ? esc(st.res.phases.keyName) : (ms > 0 ? '+' : '') + ms + ' ms'; })()}</span></button>`).join('')}</div>
   </div>` : ''}
+  ${barrelCard()}
   <div class="card">
     <div class="eyebrow">Library</div>
     <h2>${st.source === 'library' ? 'Saved rep' : 'Save this rep'}</h2>
@@ -1029,6 +1058,7 @@ document.addEventListener('keydown', e => { if (st.tab !== 'Analyze' || /INPUT|S
 
 $('report').addEventListener('click', async e => {
   const mo = e.target.closest('[data-moment]'); if (mo) { focusMoment(+mo.dataset.moment); return; }
+  const zs = e.target.closest('[data-zoneshow]'); if (zs) { const z = zoneInfo(); if (!z) return; st.layers.zone = true; st.layers.bat = true; document.querySelector('[data-layer="zone"]').setAttribute('aria-pressed', 'true'); document.querySelector('[data-layer="bat"]').setAttribute('aria-pressed', 'true'); pause(); seekFrame(z.launch); $('stage').scrollIntoView({ behavior: 'smooth', block: 'center' }); setStageMeta(); draw(); return; }
   const g = e.target.closest('[data-goto]'); if (g) { pause(); seekFrame(st.res.phases.list.find(p => p[0] === g.dataset.goto)?.[1] ?? st.res.phases.key); $('stage').scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
   const fo = e.target.closest('[data-focus]'); if (fo) {
     const k = fo.dataset.focus; st.focusFix = st.focusFix === k ? null : k;
@@ -1104,6 +1134,37 @@ requestAnimationFrame(loop);
 setTimeout(() => { ensureModel().catch(() => {}); }, 1500);
 setTimeout(() => { ensurePrecise().catch(() => {}); ensureDetector(); }, 4000);
 
+/* ---------------- barrel through the zone ---------------- */
+var zoneCache = null, zoneRecCache = null; // var: renderReport can run before this point of the script
+function zoneInfo() {
+  if (!st.res || !st.seq || st.mode !== 'hit' || st.res.kind !== 'hit') return null;
+  if (!zoneCache || zoneCache.res !== st.res || zoneCache.tips !== st.seq.batTips) zoneCache = { res: st.res, tips: st.seq.batTips, z: st.seq.batTips && (st.seq.batOk || st.source !== 'video') ? barrelZone(st.seq, st.res.phases, st.heightIn) : null };
+  return zoneCache.z;
+}
+function zoneOfRecord(rec) {
+  if (!rec || rec.kind !== 'hit' || !rec.bat) return null;
+  if (!zoneRecCache) zoneRecCache = new Map();
+  if (!zoneRecCache.has(rec.id)) { try { const s = seqFromRecord(rec); const ph = { list: rec.phases, key: rec.key, start: 0, end: rec.frames.length - 1 }; zoneRecCache.set(rec.id, barrelZone(s, ph, rec.heightIn || 70)); } catch { zoneRecCache.set(rec.id, null); } }
+  return zoneRecCache.get(rec.id);
+}
+function drawZone(ctx, map, scale, i, dpr) {
+  const z = zoneInfo(); if (!z) return;
+  ctx.save();
+  const a = map(z.zone.x0, z.zone.top), b = map(z.zone.x1, z.zone.bot);
+  ctx.fillStyle = 'rgba(61,220,151,.08)'; ctx.strokeStyle = 'rgba(61,220,151,.55)'; ctx.lineWidth = 1.5*dpr; ctx.setLineDash([6*dpr, 5*dpr]);
+  ctx.fillRect(Math.min(a[0], b[0]), a[1], Math.abs(b[0] - a[0]), b[1] - a[1]); ctx.strokeRect(Math.min(a[0], b[0]), a[1], Math.abs(b[0] - a[0]), b[1] - a[1]); ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(61,220,151,.9)'; ctx.font = `600 ${11*dpr}px ${css('--f-mono') || 'monospace'}`; ctx.fillText('ZONE', Math.min(a[0], b[0]) + 6*dpr, a[1] + 14*dpr);
+  // sweet-spot trail: green while it rides the ball's path through the zone
+  ctx.lineCap = 'round';
+  for (const t of z.trail) { if (t.miss || t.i > i) continue; const p = map(t.px, t.py), q = map(t.x, t.y); ctx.strokeStyle = t.on ? 'rgba(61,220,151,.95)' : 'rgba(233,238,244,.45)'; ctx.lineWidth = Math.max(2, scale*(t.on ? 0.012 : 0.006)); ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.stroke(); }
+  const s = z.sweet(i); if (s) { const p = map(s.x, s.y); ctx.fillStyle = '#3DDC97'; ctx.beginPath(); ctx.arc(p[0], p[1], Math.max(3, scale*0.012), 0, Math.PI*2); ctx.fill(); ctx.strokeStyle = 'rgba(7,12,18,.8)'; ctx.lineWidth = 1.5*dpr; ctx.stroke(); }
+  // attack angle at contact
+  if (z.attack != null && i >= z.contact && st.seq.fps >= 55) { const c = z.sweet(z.contact); if (c) { const p = map(c.x, c.y), r = scale*0.14, an = -z.attack*Math.PI/180, dir = map(c.x + 0.1, c.y)[0] > p[0] ? 1 : -1; const q = [p[0] + Math.cos(an)*r*dir, p[1] + Math.sin(an)*r];
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2*dpr; ctx.setLineDash([4*dpr, 4*dpr]); ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(p[0] + r*dir, p[1]); ctx.stroke(); ctx.setLineDash([]); arrow(ctx, p, q, '#3DDC97', Math.max(2, scale*0.008));
+    ctx.fillStyle = '#fff'; ctx.font = `700 ${12*dpr}px ${css('--f-mono') || 'monospace'}`; ctx.fillText(`${Math.round(z.attack)}° attack`, q[0] + 6*dpr*dir - (dir < 0 ? 80*dpr : 0), q[1] - 6*dpr); } }
+  ctx.restore();
+}
+
 /* ---------------- full screen: show a player his swing with the skeleton, the fixed form and his good swing ---------------- */
 function fsOptions() {
   const kind = st.mode, recs = recsFor(kind).filter(x => x.id !== st.recId), base = st.prefs['base_' + kind];
@@ -1115,9 +1176,10 @@ function fsOptions() {
 function fsFixes() {
   const r = st.res; if (!r) { $('fsFixes').innerHTML = ''; return; }
   const fixes = r.metrics.filter(m => m.status === 'fix' || m.status === 'watch').sort((a, b) => a.score - b.score).slice(0, 3);
-  $('fsFixes').innerHTML = fixes.map((m, i) => `<button class="fs-fix ${m.status}" type="button" data-fsgo="${esc(m.phase)}"><b>${i + 1}</b>${esc(m.label)}</button>`).join('');
+  const z = zoneInfo();
+  $('fsFixes').innerHTML = (z ? `<span class="fs-fix zone"><b>Zone</b>${Math.round(z.inches)} in · ${Math.round(z.ms)} ms</span>` : '') + fixes.map((m, i) => `<button class="fs-fix ${m.status}" type="button" data-fsgo="${esc(m.phase)}"><b>${i + 1}</b>${esc(m.label)}</button>`).join('');
 }
-function fsSync() { document.querySelectorAll('[data-fsl]').forEach(b => b.setAttribute('aria-pressed', !!st.layers[b.dataset.fsl])); document.querySelector('[data-fsl="bat"]').hidden = st.mode !== 'hit' || !st.batCtx; }
+function fsSync() { document.querySelectorAll('[data-fsl]').forEach(b => b.setAttribute('aria-pressed', !!st.layers[b.dataset.fsl])); document.querySelector('[data-fsl="bat"]').hidden = st.mode !== 'hit' || !st.seq || !st.seq.batTips; document.querySelector('[data-fsl="zone"]').hidden = st.mode !== 'hit' || !zoneInfo(); }
 function setCompare(v) {
   st.compareRec = !v ? null : v.startsWith('model:') ? modelRecord(st.mode, v.slice(6)) : st.records.find(r => r.id === v) || null;
   if (st.compareRec) { prepCompare(); st.layers.past = true; }
@@ -1144,5 +1206,5 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('stage')
 $('fsChips').onclick = e => { const b = e.target.closest('[data-fsl]'); if (!b) return; const k = b.dataset.fsl; st.layers[k] = !st.layers[k]; const m = document.querySelector(`[data-layer="${k}"]`); if (m) m.setAttribute('aria-pressed', st.layers[k]); fsSync(); setStageMeta(); draw(); };
 $('fsCmp').onchange = e => setCompare(e.target.value);
 $('fsFixes').onclick = e => { const b = e.target.closest('[data-fsgo]'); if (!b || !st.res) return; pause(); seekFrame(st.res.phases.list.find(p => p[0] === b.dataset.fsgo)?.[1] ?? st.res.phases.key); if (!st.layers.ideal) { st.layers.ideal = true; fsSync(); } draw(); };
-window.__swinglab = { st, applyBatPath: () => st.seq && applyBatPath(st.seq) }; // test hook for the automated checks
+window.__swinglab = { st, applyBatPath: () => st.seq && applyBatPath(st.seq), zone: () => { zoneCache = { res: null }; return zoneInfo(); }, seek: i => { pause(); seekFrame(i); } }; // test hook for the automated checks
 })();
