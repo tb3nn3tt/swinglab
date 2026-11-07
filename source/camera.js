@@ -100,9 +100,9 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && cam
 
 /* ---------------- standalone extras: backup, install, offline ---------------- */
 $('camBtn').hidden = false;
-$('recBtn').classList.remove('primary');
+$('recBtn').classList.remove('primary'); $('recLbl').textContent = 'Upload video';
 $('recLbl').dataset.standalone = '1';
-$('recHint').innerHTML = '<b>Record</b> opens the camera right here and tracks the skeleton live. <b>Upload</b> takes a clip you already filmed, including slo-mo.';
+$('recHint').innerHTML = '<b>Record</b> films right here with a live skeleton. <b>Upload video</b> takes a clip you already shot, including slo-mo (set Clip to match).';
 $('storeTag').textContent = 'Saved on this phone';
 $('libNote').textContent = 'Each rep stores the skeleton, phases and numbers, not the video. Reps are saved on this phone, so back up your library now and then.';
 $('backupRow').hidden = false;

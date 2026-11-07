@@ -79,8 +79,30 @@ function cleanRaw(raw, sigma = 1.0) {
   return out;
 }
 
+/* both hands hold the bat, so the wrists must be close together. In blurred frames the pose model often
+   misplaces one wrist with low confidence; when they disagree, trust the confident one and put the other beside it. */
+function unifyHands(raw) {
+  const n = raw.length; if (!n) return raw;
+  const lens = raw.map(f => Math.max(f[15*3+1], f[16*3+1]) - f[1]).filter(v => v > 0).sort((a, b) => a - b);
+  const Hest = (lens[Math.floor(lens.length*0.8)] || 100)/0.88;
+  let prev = null;
+  return raw.map(f0 => {
+    const f = Float32Array.from(f0), L = [f[27], f[28], f[29]], R = [f[30], f[31], f[32]];
+    const d = Math.hypot(L[0] - R[0], L[1] - R[1]);
+    if (d > 0.13*Hest && Math.max(L[2], R[2]) > 0.12) {
+      // pick the wrist that is more confident; on a near tie, the one closer to where the grip was last frame
+      let keepL = L[2] >= R[2];
+      if (prev && Math.abs(L[2] - R[2]) < 0.1) keepL = Math.hypot(L[0] - prev[0], L[1] - prev[1]) <= Math.hypot(R[0] - prev[0], R[1] - prev[1]);
+      const k = keepL ? L : R, o = keepL ? 30 : 27;
+      f[o] = k[0]; f[o+1] = k[1]; f[o+2] = k[2]*0.85;
+    }
+    prev = [(f[27] + f[30])/2, (f[28] + f[31])/2];
+    return f;
+  });
+}
+
 /* ---------- normalize pixel frames into body-height units ---------- */
-function normalize(clean, leadLeft) {
+function normalize(clean, leadLeft, fixed) {
   const n = clean.length;
   const lens = clean.map(f => { const ny = f[1], ay = (f[15*3+1]+f[16*3+1])/2; return ay - ny; });
   const H = (percentile(lens, 0.8) || 1)/0.88;
@@ -90,6 +112,13 @@ function normalize(clean, leadLeft) {
   let S = sideMap(leadLeft);
   const travel = j => { const x0 = clean[0][j*3]; let best = 0; for (const f of clean) { const d = f[j*3]-x0; if (Math.abs(d) > Math.abs(best)) best = d; } return best; };
   let tl = travel(S.lAn), tb = travel(S.bAn), autoSwapped = false;
+  if (fixed) {
+    // sides already worked out from the motion itself (see detectSides)
+    const fwd = fixed.fwd;
+    const frames = clean.map(f => { const o = new Float32Array(NJ*2); for (let j = 0; j < NJ; j++) { o[j*2] = (f[j*3]-originX)*fwd/H; o[j*2+1] = (f[j*3+1]-groundY)/H; } return o; });
+    const conf = clean.map(f => { const o = new Float32Array(NJ); for (let j = 0; j < NJ; j++) o[j] = f[j*3+2]; return o; });
+    return { frames, conf, H, groundY, originX, fwd, leadLeft, autoSwapped: false };
+  }
   if (Math.abs(tl) < 0.4*Math.abs(tb) && Math.abs(tb) > 0.05*H) { leadLeft = !leadLeft; S = sideMap(leadLeft); [tl, tb] = [tb, tl]; autoSwapped = true; }
   let fwd = Math.abs(tl) > 0.03*H ? Math.sign(tl) : Math.sign(clean[0][S.lAn*3] - clean[0][S.bAn*3]) || 1;
   const frames = clean.map(f => { const o = new Float32Array(NJ*2); for (let j = 0; j < NJ; j++) { o[j*2] = (f[j*3]-originX)*fwd/H; o[j*2+1] = (f[j*3+1]-groundY)/H; } return o; });
@@ -97,6 +126,36 @@ function normalize(clean, leadLeft) {
   return { frames, conf, H, groundY, originX, fwd, leadLeft, autoSwapped };
 }
 function toPixel(seq, x, y) { return [seq.originX + x*seq.fwd*seq.H, seq.groundY + y*seq.H]; }
+
+/* Which side leads and which way the pitcher (or plate) is, from the motion itself, so a wrong Bats/Throws
+   setting or a wide stance can't flip the analysis. Hitting: right after contact the barrel points at the pitcher,
+   and the lead side is the side of the body nearer the pitcher in the stance. Pitching: the throwing hand is the
+   fastest wrist, and it moves toward the plate at release. Works whether the player faces toward or away from the camera. */
+function detectSides(clean, kind, fps, tipsPx) {
+  const n = clean.length; if (n < 8) return null;
+  const spd = j => gauss1d(clean.map((f, i) => { const p = clean[Math.max(0, i-1)]; return Math.hypot(f[j*3] - p[j*3], f[j*3+1] - p[j*3+1]); }), 1.5);
+  const sideX = (f, left) => { const js = left ? [5, 11, 15] : [6, 12, 16]; return js.reduce((s, j) => s + f[j*3], 0)/3; };
+  const stance = clean.slice(0, Math.max(3, Math.round(n*0.25)));
+  const dl = stance.reduce((s, f) => s + sideX(f, true) - sideX(f, false), 0)/stance.length; // + = body's left side sits to the image right
+  if (kind === 'pitch') {
+    const sl = spd(9), sr = spd(10), ml = Math.max(...sl), mr = Math.max(...sr), throwLeft = ml > mr;
+    const s = throwLeft ? sl : sr, j = throwLeft ? 9 : 10, pk = s.indexOf(Math.max(...s));
+    const dx = clean[Math.min(n-1, pk + 3)][j*3] - clean[Math.max(0, pk - 3)][j*3];
+    return { leadLeft: !throwLeft, fwd: Math.sign(dx) || (throwLeft ? -Math.sign(dl) : Math.sign(dl)) || 1, conf: Math.abs(ml - mr)/Math.max(ml, mr, 1e-6), how: 'throwing hand' };
+  }
+  const hm = clean.map(f => [(f[27] + f[30])/2, (f[28] + f[31])/2]);
+  const hs = gauss1d(hm.map((h, i) => { const p = hm[Math.max(0, i-1)]; return Math.hypot(h[0] - p[0], h[1] - p[1]); }), 2);
+  let pk = 0; hs.forEach((v, i) => { if (v > hs[pk]) pk = i; });
+  let sx = 0, cnt = 0;
+  if (tipsPx) for (let i = pk; i <= Math.min(n - 1, pk + Math.round(0.33*fps)); i++) if (tipsPx[i]) { sx += tipsPx[i][0] - hm[i][0]; cnt++; }
+  let pitcher = Math.sign(sx), how = 'bat after contact';
+  if (!pitcher || !cnt) { // fall back to the stride: the foot that travels farther, in the direction it travels
+    const tr = j => { const x0 = clean[0][j*3]; let best = 0; for (const f of clean) { const d = f[j*3] - x0; if (Math.abs(d) > Math.abs(best)) best = d; } return best; };
+    const a = tr(15), b = tr(16); pitcher = Math.sign(Math.abs(a) >= Math.abs(b) ? a : b) || 1; how = 'stride';
+  }
+  const leadLeft = dl*pitcher > 0;
+  return { leadLeft, fwd: pitcher, conf: Math.min(1, Math.abs(sx)/Math.max(1, cnt)/40), how };
+}
 
 /* ---------- bat path from per-frame ray scores (dynamic programming) ---------- */
 const NA = 72;
@@ -124,11 +183,13 @@ function solveBat(scores, allow) {
 
 /* bat path v2: state = (previous angle, angle), so the solver knows the bat's turning speed and keeps it smooth:
    the bat speeds up and slows down gradually and does not flip back and forth. anchors = frames the user tapped. */
-function solveBat2(scores, allow, anchors) {
+const BAT_W = { u: 3, w1: 0.5, w2: 0.6, w3: 0.15, ek: 0.85 };
+function solveBat2(scores, allow, anchors, W8) {
+  const Wt = { ...BAT_W, ...(W8 || {}) };
   const n = scores.length, A = NA, wrap = d => ((d + A/2) % A + A) % A - A/2;
   const unary = scores.map((s, i) => {
     const u = new Float32Array(A);
-    if (s) { const arr = Array.from(s), m = percentile(arr, 0.5), mx = Math.max(...arr), den = (mx - m) || 1, conf = clamp((mx - m)/(m + 8), 0, 1); for (let a = 0; a < A; a++) u[a] = -((s[a] - m)/den)*conf; }
+    if (s) { const arr = Array.from(s), m = percentile(arr, 0.5), mx = Math.max(...arr), den = (mx - m) || 1, conf = clamp((mx - m)/(m + 8), 0, 1); for (let a = 0; a < A; a++) u[a] = -((s[a] - m)/den)*conf*Wt.u; }
     const an = anchors && anchors[i];
     if (an != null) for (let a = 0; a < A; a++) { const d = Math.abs(wrap(a - an)); u[a] += d <= 1 ? -6 : 8 + d*0.2; }
     return u;
@@ -139,14 +200,14 @@ function solveBat2(scores, allow, anchors) {
   for (let i = 1; i < n; i++) {
     const al = Math.max(1.5, Math.min(16, allow ? allow[i] : 8)), lim = Math.min(18, Math.ceil(al*1.8)), acc = Math.max(1.2, al*0.6);
     // how fast the bat should be turning right now, from how fast the hands move (direction unknown, speed known)
-    const e = Math.max(0, (al - 2)*0.85), sig = 1.5 + 0.35*e;
+    const e = Math.max(0, (al - 2)*Wt.ek), sig = 1.5 + 0.35*e;
     const nc = new Float32Array(A*A).fill(Infinity), bk = new Int8Array(A*A);
     for (let p = 0; p < A; p++) {
       for (let dq = -limPrev; dq <= limPrev; dq++) {
         const q = (p - dq + A) % A, c0 = cost[q*A + p]; if (c0 === Infinity) continue;
         for (let d = -lim; d <= lim; d++) {
           const a = (p + d + A) % A, k = p*A + a;
-          const v = c0 + 0.5*(d/al)**2 + 0.6*((d - dq)/acc)**2 + 0.45*((Math.abs(d) - e)/sig)**2;
+          const v = c0 + Wt.w1*(d/al)**2 + Wt.w2*((d - dq)/acc)**2 + Wt.w3*((Math.abs(d) - e)/sig)**2;
           if (v < nc[k]) { nc[k] = v; bk[k] = q; }
         }
       }
@@ -493,4 +554,4 @@ function addBatSpeed(seq) {
   seq.batOk = ok > 0.55;
 }
 
-if (typeof module !== 'undefined') module.exports = { NJ, JN, sideMap, cleanRaw, normalize, toPixel, solveBat, solveBat2, detectPhases, analyzeMotion, packRecord, seqFromRecord, alignIndex, lerpFrame, compareRecords, buildDemo, buildPro, buildFaulty, buildModel, MODELS, addBatSpeed, NA, angAt, P, mid, gauss1d, deriv, speedSeries };
+if (typeof module !== 'undefined') module.exports = { NJ, JN, sideMap, cleanRaw, unifyHands, detectSides, normalize, toPixel, solveBat, solveBat2, BAT_W, detectPhases, analyzeMotion, packRecord, seqFromRecord, alignIndex, lerpFrame, compareRecords, buildDemo, buildPro, buildFaulty, buildModel, MODELS, addBatSpeed, NA, angAt, P, mid, gauss1d, deriv, speedSeries };

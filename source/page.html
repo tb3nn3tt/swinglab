@@ -114,6 +114,26 @@ p { margin: 0; }
 .moment .mt { font-weight: 600; font-size: 13.5px; line-height: 1.25; padding: 0 2px; }
 .moment .ms { font-size: 12.5px; color: var(--ink-2); padding: 0 2px; display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
 .moment .mtime { font-family: var(--f-mono); font-size: 11px; color: var(--ink-2); padding: 0 2px; font-variant-numeric: tabular-nums; }
+.capture { gap: 10px; }
+.btn.big { min-height: 56px; font-size: 16px; border-radius: 14px; }
+.who-btn { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; border: 1px solid var(--line); background: transparent; border-radius: 10px; padding: 10px 12px; font-size: 14px; text-align: left; }
+.who-btn #whoLine { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.who-edit { color: var(--accent); font-weight: 600; flex: none; }
+.setup { display: flex; flex-direction: column; gap: 10px; }
+.tools { display: flex; gap: 8px; }
+.tool { flex: 1; min-height: 40px; border: 1px solid var(--line); background: var(--surface-2); border-radius: 10px; font-weight: 600; font-size: 14px; }
+.tool[aria-pressed="true"], .tool[aria-expanded="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.layer-panel { display: flex; flex-direction: column; gap: 8px; }
+details.more { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+details.more > summary { cursor: pointer; padding: 14px 16px; font-family: var(--f-display); font-weight: 600; font-size: 18px; letter-spacing: .03em; text-transform: uppercase; list-style: none; display: flex; justify-content: space-between; }
+details.more > summary::after { content: "Show"; font-family: var(--f-body); font-size: 13px; text-transform: none; color: var(--accent); letter-spacing: 0; }
+details.more[open] > summary::after { content: "Hide"; }
+details.more > .more-body { display: flex; flex-direction: column; gap: 16px; padding: 0 0 16px; }
+details.more .card { border: 0; border-top: 1px solid var(--line); border-radius: 0; }
+.top-fixes { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.top-fixes li { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; }
+.top-fixes .n { font-family: var(--f-display); font-weight: 700; font-size: 22px; color: var(--accent); line-height: 1.1; }
+.top-fixes p { margin-top: 2px; }
 .pick-file { position: relative; overflow: hidden; cursor: pointer; }
 .pick-file input[type=file] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font-size: 200px; z-index: 2; }
 .pick-file:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -282,38 +302,38 @@ i.dot.good { background: var(--good); } i.dot.watch { background: var(--watch); 
     <div class="grid">
       <div class="col stick">
         <div class="card capture">
-          <div>
-            <div class="eyebrow" id="capEyebrow">New rep</div>
-            <h2 id="capTitle">Film a swing</h2>
-          </div>
+          <span id="capEyebrow" hidden></span><h2 id="capTitle" class="vis">Film a swing</h2>
           <div class="cap-btns">
-            <button type="button" class="btn primary" id="camBtn" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5" fill="currentColor"/></svg><span id="camLbl">Record</span></button>
-            <div class="btn primary pick-file" id="recBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="m16 10 6-3v10l-6-3z"/></svg><span id="recLbl">Film or upload a swing</span>
+            <button type="button" class="btn primary big" id="camBtn" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5" fill="currentColor"/></svg><span id="camLbl">Record</span></button>
+            <div class="btn primary big pick-file" id="recBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 16V4m0 0-4 4m4-4 4 4M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg><span id="recLbl">Film or upload a swing</span>
               <input type="file" id="upIn" accept="video/*" aria-label="Film or upload a video">
             </div>
           </div>
-          <p class="note" id="recHint">Your phone asks where the video comes from. Pick <b>Camera</b> or <b>Take Video</b> to film now, or <b>Photo Library</b> to use a clip you already shot.</p>
+          <button type="button" class="who-btn" id="setupBtn" aria-expanded="false" aria-controls="setupPanel"><span id="whoLine">Me</span><span class="who-edit">Settings</span></button>
+          <div class="setup" id="setupPanel" hidden>
+            <div class="opts">
+              <label class="opt" for="plSel">Player <select id="plSel"></select></label>
+              <div class="opt"><span id="handLbl">Bats</span>
+                <div class="seg sm" role="group" aria-label="Handedness"><button id="hR" aria-pressed="true">Right</button><button id="hL" aria-pressed="false">Left</button></div>
+              </div>
+              <label class="opt" for="htSel">Height <select id="htSel"></select></label>
+              <label class="opt" for="slowSel">Clip
+                <select id="slowSel"><option value="1">Normal speed</option><option value="4">Slo-mo 120 fps</option><option value="8">Slo-mo 240 fps</option></select>
+              </label>
+            </div>
+            <form class="add-pl" id="addPl" hidden>
+              <input type="text" id="plName" placeholder="Player name, like Jake" maxlength="30" aria-label="Player name" autocomplete="off">
+              <button class="btn primary" type="submit">Add</button><button class="btn ghost" type="button" id="plCancel">Cancel</button>
+            </form>
+            <details class="tips"><summary>How to film it</summary><ul id="tipsList"></ul></details>
+            <p class="note" id="recHint">Your phone asks where the video comes from. Pick <b>Camera</b> to film now, or your library for a clip you already shot.</p>
+          </div>
           <div class="blocked" id="pickHelp" hidden>
             <b>Your phone didn't open the picker.</b>
-            <p class="small">The Claude app on some phones blocks video pickers inside pages like this. Open SwingLab in Safari or Chrome instead: tap the share or ⋯ menu at the top of this page, then <b>Open in browser</b>. Recording and saved reps work the same there.</p>
+            <p class="small">The Claude app on some phones blocks video pickers inside pages like this. Open SwingLab in Safari or Chrome instead: tap the share or ⋯ menu at the top of this page, then <b>Open in browser</b>.</p>
             <button class="linkbtn" type="button" id="pickHelpClose">Dismiss</button>
           </div>
-          <div class="opts">
-            <label class="opt" for="plSel">Player <select id="plSel"></select></label>
-            <div class="opt"><span id="handLbl">Bats</span>
-              <div class="seg sm" role="group" aria-label="Handedness"><button id="hR" aria-pressed="true">Right</button><button id="hL" aria-pressed="false">Left</button></div>
-            </div>
-            <label class="opt" for="htSel">Height <select id="htSel"></select></label>
-            <label class="opt" for="slowSel">Clip
-              <select id="slowSel"><option value="1">Normal speed</option><option value="4">Slo-mo 120 fps</option><option value="8">Slo-mo 240 fps</option></select>
-            </label>
-          </div>
-          <form class="add-pl" id="addPl" hidden>
-            <input type="text" id="plName" placeholder="Player name, like Jake" maxlength="30" aria-label="Player name" autocomplete="off">
-            <button class="btn primary" type="submit">Add</button><button class="btn ghost" type="button" id="plCancel">Cancel</button>
-          </form>
           <div class="install" id="installCard" hidden><p class="small" id="installTxt"></p><div class="m-actions"><button class="btn primary" type="button" id="installBtn" hidden>Install app</button><button class="linkbtn" type="button" id="installHide">Not now</button></div></div>
-          <details class="tips"><summary>How to film it</summary><ul id="tipsList"></ul></details>
         </div>
 
         <div class="card stage-card">
@@ -337,21 +357,24 @@ i.dot.good { background: var(--good); } i.dot.watch { background: var(--watch); 
               <button class="icon-btn play" id="bPlay" aria-label="Play"><svg id="icoPlay" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4v16l13-8z"/></svg></button>
               <button class="icon-btn" id="bNext" aria-label="Next frame"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
               <div class="scrub"><div class="ticks" id="ticks"></div><input type="range" id="scrub" min="0" max="100" value="0" aria-label="Frame"></div>
-              <span class="frame-no" id="fNo">0 / 0</span>
+              <span class="frame-no" id="fNo" hidden>0 / 0</span>
             </div>
-            <div class="chips" role="group" aria-label="Playback speed"><span class="row-lbl" style="align-self:center;margin-right:4px">Speed</span>
-              <button class="chip" data-speed="1" aria-pressed="false">1×</button><button class="chip" data-speed="0.5" aria-pressed="true">½×</button><button class="chip" data-speed="0.25" aria-pressed="false">¼×</button><button class="chip" data-speed="0.125" aria-pressed="false">⅛×</button>
+            <div class="tools">
+              <button class="tool" id="speedBtn" type="button" aria-label="Playback speed">½×</button>
+              <button class="tool" id="zoomFollow" type="button" aria-pressed="false">Zoom</button>
+              <button class="tool" id="batFix" type="button" aria-pressed="false" hidden>Fix bat</button>
+              <button class="tool" id="layersBtn" type="button" aria-expanded="false" aria-controls="layerPanel">Layers</button>
             </div>
-            <div class="chips" id="phaseChips" aria-label="Jump to phase"></div>
-            <div class="chips" id="layerChips" aria-label="Layers">
-              <button class="chip" data-layer="video" aria-pressed="true">Video</button>
-              <button class="chip" data-layer="skel" aria-pressed="true"><i class="sw" style="background:var(--lead)"></i>Skeleton</button>
-              <button class="chip" data-layer="bat" aria-pressed="true"><i class="sw" style="background:#FF4FA3"></i>Bat path</button>
-              <button class="chip" data-layer="energy" aria-pressed="false">Energy flow</button>
-              <button class="chip" data-layer="ideal" aria-pressed="true"><i class="sw" style="background:var(--ghost)"></i>Fixed form</button>
-              <button class="chip" data-layer="past" aria-pressed="true"><i class="sw" style="background:var(--past)"></i>Past rep</button>
-              <button class="chip" id="zoomFollow" aria-pressed="false">Follow player (zoom)</button>
-              <button class="chip" id="batFix" aria-pressed="false" hidden>Fix the bat</button>
+            <div class="layer-panel" id="layerPanel" hidden>
+              <div class="chips" id="layerChips" aria-label="Layers">
+                <button class="chip" data-layer="video" aria-pressed="true">Video</button>
+                <button class="chip" data-layer="skel" aria-pressed="true"><i class="sw" style="background:var(--lead)"></i>Skeleton</button>
+                <button class="chip" data-layer="bat" aria-pressed="true"><i class="sw" style="background:#FF4FA3"></i>Bat</button>
+                <button class="chip" data-layer="energy" aria-pressed="false">Energy flow</button>
+                <button class="chip" data-layer="ideal" aria-pressed="true"><i class="sw" style="background:var(--ghost)"></i>Fixed form</button>
+                <button class="chip" data-layer="past" aria-pressed="true"><i class="sw" style="background:var(--past)"></i>Compare</button>
+              </div>
+              <div class="chips" id="phaseChips" aria-label="Jump to phase"></div>
             </div>
             <div class="batfix" id="batFixBar" hidden>
               <p class="small"><b>Tap the end of the bat on the video.</b> Then step to another frame with the arrows and tap again. Taps at the stance, launch, contact and finish are plenty; the app fills in every frame between them.</p>

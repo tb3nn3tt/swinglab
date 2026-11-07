@@ -131,6 +131,26 @@ p { margin: 0; }
 .moment .mt { font-weight: 600; font-size: 13.5px; line-height: 1.25; padding: 0 2px; }
 .moment .ms { font-size: 12.5px; color: var(--ink-2); padding: 0 2px; display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
 .moment .mtime { font-family: var(--f-mono); font-size: 11px; color: var(--ink-2); padding: 0 2px; font-variant-numeric: tabular-nums; }
+.capture { gap: 10px; }
+.btn.big { min-height: 56px; font-size: 16px; border-radius: 14px; }
+.who-btn { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; border: 1px solid var(--line); background: transparent; border-radius: 10px; padding: 10px 12px; font-size: 14px; text-align: left; }
+.who-btn #whoLine { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.who-edit { color: var(--accent); font-weight: 600; flex: none; }
+.setup { display: flex; flex-direction: column; gap: 10px; }
+.tools { display: flex; gap: 8px; }
+.tool { flex: 1; min-height: 40px; border: 1px solid var(--line); background: var(--surface-2); border-radius: 10px; font-weight: 600; font-size: 14px; }
+.tool[aria-pressed="true"], .tool[aria-expanded="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.layer-panel { display: flex; flex-direction: column; gap: 8px; }
+details.more { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+details.more > summary { cursor: pointer; padding: 14px 16px; font-family: var(--f-display); font-weight: 600; font-size: 18px; letter-spacing: .03em; text-transform: uppercase; list-style: none; display: flex; justify-content: space-between; }
+details.more > summary::after { content: "Show"; font-family: var(--f-body); font-size: 13px; text-transform: none; color: var(--accent); letter-spacing: 0; }
+details.more[open] > summary::after { content: "Hide"; }
+details.more > .more-body { display: flex; flex-direction: column; gap: 16px; padding: 0 0 16px; }
+details.more .card { border: 0; border-top: 1px solid var(--line); border-radius: 0; }
+.top-fixes { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.top-fixes li { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; }
+.top-fixes .n { font-family: var(--f-display); font-weight: 700; font-size: 22px; color: var(--accent); line-height: 1.1; }
+.top-fixes p { margin-top: 2px; }
 .pick-file { position: relative; overflow: hidden; cursor: pointer; }
 .pick-file input[type=file] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font-size: 200px; z-index: 2; }
 .pick-file:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -299,38 +319,38 @@ i.dot.good { background: var(--good); } i.dot.watch { background: var(--watch); 
     <div class="grid">
       <div class="col stick">
         <div class="card capture">
-          <div>
-            <div class="eyebrow" id="capEyebrow">New rep</div>
-            <h2 id="capTitle">Film a swing</h2>
-          </div>
+          <span id="capEyebrow" hidden></span><h2 id="capTitle" class="vis">Film a swing</h2>
           <div class="cap-btns">
-            <button type="button" class="btn primary" id="camBtn" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5" fill="currentColor"/></svg><span id="camLbl">Record</span></button>
-            <div class="btn primary pick-file" id="recBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="m16 10 6-3v10l-6-3z"/></svg><span id="recLbl">Film or upload a swing</span>
+            <button type="button" class="btn primary big" id="camBtn" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5" fill="currentColor"/></svg><span id="camLbl">Record</span></button>
+            <div class="btn primary big pick-file" id="recBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 16V4m0 0-4 4m4-4 4 4M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg><span id="recLbl">Film or upload a swing</span>
               <input type="file" id="upIn" accept="video/*" aria-label="Film or upload a video">
             </div>
           </div>
-          <p class="note" id="recHint">Your phone asks where the video comes from. Pick <b>Camera</b> or <b>Take Video</b> to film now, or <b>Photo Library</b> to use a clip you already shot.</p>
+          <button type="button" class="who-btn" id="setupBtn" aria-expanded="false" aria-controls="setupPanel"><span id="whoLine">Me</span><span class="who-edit">Settings</span></button>
+          <div class="setup" id="setupPanel" hidden>
+            <div class="opts">
+              <label class="opt" for="plSel">Player <select id="plSel"></select></label>
+              <div class="opt"><span id="handLbl">Bats</span>
+                <div class="seg sm" role="group" aria-label="Handedness"><button id="hR" aria-pressed="true">Right</button><button id="hL" aria-pressed="false">Left</button></div>
+              </div>
+              <label class="opt" for="htSel">Height <select id="htSel"></select></label>
+              <label class="opt" for="slowSel">Clip
+                <select id="slowSel"><option value="1">Normal speed</option><option value="4">Slo-mo 120 fps</option><option value="8">Slo-mo 240 fps</option></select>
+              </label>
+            </div>
+            <form class="add-pl" id="addPl" hidden>
+              <input type="text" id="plName" placeholder="Player name, like Jake" maxlength="30" aria-label="Player name" autocomplete="off">
+              <button class="btn primary" type="submit">Add</button><button class="btn ghost" type="button" id="plCancel">Cancel</button>
+            </form>
+            <details class="tips"><summary>How to film it</summary><ul id="tipsList"></ul></details>
+            <p class="note" id="recHint">Your phone asks where the video comes from. Pick <b>Camera</b> to film now, or your library for a clip you already shot.</p>
+          </div>
           <div class="blocked" id="pickHelp" hidden>
             <b>Your phone didn't open the picker.</b>
-            <p class="small">The Claude app on some phones blocks video pickers inside pages like this. Open SwingLab in Safari or Chrome instead: tap the share or ⋯ menu at the top of this page, then <b>Open in browser</b>. Recording and saved reps work the same there.</p>
+            <p class="small">The Claude app on some phones blocks video pickers inside pages like this. Open SwingLab in Safari or Chrome instead: tap the share or ⋯ menu at the top of this page, then <b>Open in browser</b>.</p>
             <button class="linkbtn" type="button" id="pickHelpClose">Dismiss</button>
           </div>
-          <div class="opts">
-            <label class="opt" for="plSel">Player <select id="plSel"></select></label>
-            <div class="opt"><span id="handLbl">Bats</span>
-              <div class="seg sm" role="group" aria-label="Handedness"><button id="hR" aria-pressed="true">Right</button><button id="hL" aria-pressed="false">Left</button></div>
-            </div>
-            <label class="opt" for="htSel">Height <select id="htSel"></select></label>
-            <label class="opt" for="slowSel">Clip
-              <select id="slowSel"><option value="1">Normal speed</option><option value="4">Slo-mo 120 fps</option><option value="8">Slo-mo 240 fps</option></select>
-            </label>
-          </div>
-          <form class="add-pl" id="addPl" hidden>
-            <input type="text" id="plName" placeholder="Player name, like Jake" maxlength="30" aria-label="Player name" autocomplete="off">
-            <button class="btn primary" type="submit">Add</button><button class="btn ghost" type="button" id="plCancel">Cancel</button>
-          </form>
           <div class="install" id="installCard" hidden><p class="small" id="installTxt"></p><div class="m-actions"><button class="btn primary" type="button" id="installBtn" hidden>Install app</button><button class="linkbtn" type="button" id="installHide">Not now</button></div></div>
-          <details class="tips"><summary>How to film it</summary><ul id="tipsList"></ul></details>
         </div>
 
         <div class="card stage-card">
@@ -354,21 +374,24 @@ i.dot.good { background: var(--good); } i.dot.watch { background: var(--watch); 
               <button class="icon-btn play" id="bPlay" aria-label="Play"><svg id="icoPlay" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4v16l13-8z"/></svg></button>
               <button class="icon-btn" id="bNext" aria-label="Next frame"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
               <div class="scrub"><div class="ticks" id="ticks"></div><input type="range" id="scrub" min="0" max="100" value="0" aria-label="Frame"></div>
-              <span class="frame-no" id="fNo">0 / 0</span>
+              <span class="frame-no" id="fNo" hidden>0 / 0</span>
             </div>
-            <div class="chips" role="group" aria-label="Playback speed"><span class="row-lbl" style="align-self:center;margin-right:4px">Speed</span>
-              <button class="chip" data-speed="1" aria-pressed="false">1×</button><button class="chip" data-speed="0.5" aria-pressed="true">½×</button><button class="chip" data-speed="0.25" aria-pressed="false">¼×</button><button class="chip" data-speed="0.125" aria-pressed="false">⅛×</button>
+            <div class="tools">
+              <button class="tool" id="speedBtn" type="button" aria-label="Playback speed">½×</button>
+              <button class="tool" id="zoomFollow" type="button" aria-pressed="false">Zoom</button>
+              <button class="tool" id="batFix" type="button" aria-pressed="false" hidden>Fix bat</button>
+              <button class="tool" id="layersBtn" type="button" aria-expanded="false" aria-controls="layerPanel">Layers</button>
             </div>
-            <div class="chips" id="phaseChips" aria-label="Jump to phase"></div>
-            <div class="chips" id="layerChips" aria-label="Layers">
-              <button class="chip" data-layer="video" aria-pressed="true">Video</button>
-              <button class="chip" data-layer="skel" aria-pressed="true"><i class="sw" style="background:var(--lead)"></i>Skeleton</button>
-              <button class="chip" data-layer="bat" aria-pressed="true"><i class="sw" style="background:#FF4FA3"></i>Bat path</button>
-              <button class="chip" data-layer="energy" aria-pressed="false">Energy flow</button>
-              <button class="chip" data-layer="ideal" aria-pressed="true"><i class="sw" style="background:var(--ghost)"></i>Fixed form</button>
-              <button class="chip" data-layer="past" aria-pressed="true"><i class="sw" style="background:var(--past)"></i>Past rep</button>
-              <button class="chip" id="zoomFollow" aria-pressed="false">Follow player (zoom)</button>
-              <button class="chip" id="batFix" aria-pressed="false" hidden>Fix the bat</button>
+            <div class="layer-panel" id="layerPanel" hidden>
+              <div class="chips" id="layerChips" aria-label="Layers">
+                <button class="chip" data-layer="video" aria-pressed="true">Video</button>
+                <button class="chip" data-layer="skel" aria-pressed="true"><i class="sw" style="background:var(--lead)"></i>Skeleton</button>
+                <button class="chip" data-layer="bat" aria-pressed="true"><i class="sw" style="background:#FF4FA3"></i>Bat</button>
+                <button class="chip" data-layer="energy" aria-pressed="false">Energy flow</button>
+                <button class="chip" data-layer="ideal" aria-pressed="true"><i class="sw" style="background:var(--ghost)"></i>Fixed form</button>
+                <button class="chip" data-layer="past" aria-pressed="true"><i class="sw" style="background:var(--past)"></i>Compare</button>
+              </div>
+              <div class="chips" id="phaseChips" aria-label="Jump to phase"></div>
             </div>
             <div class="batfix" id="batFixBar" hidden>
               <p class="small"><b>Tap the end of the bat on the video.</b> Then step to another frame with the arrows and tap again. Taps at the stance, launch, contact and finish are plenty; the app fills in every frame between them.</p>
@@ -561,8 +584,30 @@ function cleanRaw(raw, sigma = 1.0) {
   return out;
 }
 
+/* both hands hold the bat, so the wrists must be close together. In blurred frames the pose model often
+   misplaces one wrist with low confidence; when they disagree, trust the confident one and put the other beside it. */
+function unifyHands(raw) {
+  const n = raw.length; if (!n) return raw;
+  const lens = raw.map(f => Math.max(f[15*3+1], f[16*3+1]) - f[1]).filter(v => v > 0).sort((a, b) => a - b);
+  const Hest = (lens[Math.floor(lens.length*0.8)] || 100)/0.88;
+  let prev = null;
+  return raw.map(f0 => {
+    const f = Float32Array.from(f0), L = [f[27], f[28], f[29]], R = [f[30], f[31], f[32]];
+    const d = Math.hypot(L[0] - R[0], L[1] - R[1]);
+    if (d > 0.13*Hest && Math.max(L[2], R[2]) > 0.12) {
+      // pick the wrist that is more confident; on a near tie, the one closer to where the grip was last frame
+      let keepL = L[2] >= R[2];
+      if (prev && Math.abs(L[2] - R[2]) < 0.1) keepL = Math.hypot(L[0] - prev[0], L[1] - prev[1]) <= Math.hypot(R[0] - prev[0], R[1] - prev[1]);
+      const k = keepL ? L : R, o = keepL ? 30 : 27;
+      f[o] = k[0]; f[o+1] = k[1]; f[o+2] = k[2]*0.85;
+    }
+    prev = [(f[27] + f[30])/2, (f[28] + f[31])/2];
+    return f;
+  });
+}
+
 /* ---------- normalize pixel frames into body-height units ---------- */
-function normalize(clean, leadLeft) {
+function normalize(clean, leadLeft, fixed) {
   const n = clean.length;
   const lens = clean.map(f => { const ny = f[1], ay = (f[15*3+1]+f[16*3+1])/2; return ay - ny; });
   const H = (percentile(lens, 0.8) || 1)/0.88;
@@ -572,6 +617,13 @@ function normalize(clean, leadLeft) {
   let S = sideMap(leadLeft);
   const travel = j => { const x0 = clean[0][j*3]; let best = 0; for (const f of clean) { const d = f[j*3]-x0; if (Math.abs(d) > Math.abs(best)) best = d; } return best; };
   let tl = travel(S.lAn), tb = travel(S.bAn), autoSwapped = false;
+  if (fixed) {
+    // sides already worked out from the motion itself (see detectSides)
+    const fwd = fixed.fwd;
+    const frames = clean.map(f => { const o = new Float32Array(NJ*2); for (let j = 0; j < NJ; j++) { o[j*2] = (f[j*3]-originX)*fwd/H; o[j*2+1] = (f[j*3+1]-groundY)/H; } return o; });
+    const conf = clean.map(f => { const o = new Float32Array(NJ); for (let j = 0; j < NJ; j++) o[j] = f[j*3+2]; return o; });
+    return { frames, conf, H, groundY, originX, fwd, leadLeft, autoSwapped: false };
+  }
   if (Math.abs(tl) < 0.4*Math.abs(tb) && Math.abs(tb) > 0.05*H) { leadLeft = !leadLeft; S = sideMap(leadLeft); [tl, tb] = [tb, tl]; autoSwapped = true; }
   let fwd = Math.abs(tl) > 0.03*H ? Math.sign(tl) : Math.sign(clean[0][S.lAn*3] - clean[0][S.bAn*3]) || 1;
   const frames = clean.map(f => { const o = new Float32Array(NJ*2); for (let j = 0; j < NJ; j++) { o[j*2] = (f[j*3]-originX)*fwd/H; o[j*2+1] = (f[j*3+1]-groundY)/H; } return o; });
@@ -579,6 +631,36 @@ function normalize(clean, leadLeft) {
   return { frames, conf, H, groundY, originX, fwd, leadLeft, autoSwapped };
 }
 function toPixel(seq, x, y) { return [seq.originX + x*seq.fwd*seq.H, seq.groundY + y*seq.H]; }
+
+/* Which side leads and which way the pitcher (or plate) is, from the motion itself, so a wrong Bats/Throws
+   setting or a wide stance can't flip the analysis. Hitting: right after contact the barrel points at the pitcher,
+   and the lead side is the side of the body nearer the pitcher in the stance. Pitching: the throwing hand is the
+   fastest wrist, and it moves toward the plate at release. Works whether the player faces toward or away from the camera. */
+function detectSides(clean, kind, fps, tipsPx) {
+  const n = clean.length; if (n < 8) return null;
+  const spd = j => gauss1d(clean.map((f, i) => { const p = clean[Math.max(0, i-1)]; return Math.hypot(f[j*3] - p[j*3], f[j*3+1] - p[j*3+1]); }), 1.5);
+  const sideX = (f, left) => { const js = left ? [5, 11, 15] : [6, 12, 16]; return js.reduce((s, j) => s + f[j*3], 0)/3; };
+  const stance = clean.slice(0, Math.max(3, Math.round(n*0.25)));
+  const dl = stance.reduce((s, f) => s + sideX(f, true) - sideX(f, false), 0)/stance.length; // + = body's left side sits to the image right
+  if (kind === 'pitch') {
+    const sl = spd(9), sr = spd(10), ml = Math.max(...sl), mr = Math.max(...sr), throwLeft = ml > mr;
+    const s = throwLeft ? sl : sr, j = throwLeft ? 9 : 10, pk = s.indexOf(Math.max(...s));
+    const dx = clean[Math.min(n-1, pk + 3)][j*3] - clean[Math.max(0, pk - 3)][j*3];
+    return { leadLeft: !throwLeft, fwd: Math.sign(dx) || (throwLeft ? -Math.sign(dl) : Math.sign(dl)) || 1, conf: Math.abs(ml - mr)/Math.max(ml, mr, 1e-6), how: 'throwing hand' };
+  }
+  const hm = clean.map(f => [(f[27] + f[30])/2, (f[28] + f[31])/2]);
+  const hs = gauss1d(hm.map((h, i) => { const p = hm[Math.max(0, i-1)]; return Math.hypot(h[0] - p[0], h[1] - p[1]); }), 2);
+  let pk = 0; hs.forEach((v, i) => { if (v > hs[pk]) pk = i; });
+  let sx = 0, cnt = 0;
+  if (tipsPx) for (let i = pk; i <= Math.min(n - 1, pk + Math.round(0.33*fps)); i++) if (tipsPx[i]) { sx += tipsPx[i][0] - hm[i][0]; cnt++; }
+  let pitcher = Math.sign(sx), how = 'bat after contact';
+  if (!pitcher || !cnt) { // fall back to the stride: the foot that travels farther, in the direction it travels
+    const tr = j => { const x0 = clean[0][j*3]; let best = 0; for (const f of clean) { const d = f[j*3] - x0; if (Math.abs(d) > Math.abs(best)) best = d; } return best; };
+    const a = tr(15), b = tr(16); pitcher = Math.sign(Math.abs(a) >= Math.abs(b) ? a : b) || 1; how = 'stride';
+  }
+  const leadLeft = dl*pitcher > 0;
+  return { leadLeft, fwd: pitcher, conf: Math.min(1, Math.abs(sx)/Math.max(1, cnt)/40), how };
+}
 
 /* ---------- bat path from per-frame ray scores (dynamic programming) ---------- */
 const NA = 72;
@@ -606,11 +688,13 @@ function solveBat(scores, allow) {
 
 /* bat path v2: state = (previous angle, angle), so the solver knows the bat's turning speed and keeps it smooth:
    the bat speeds up and slows down gradually and does not flip back and forth. anchors = frames the user tapped. */
-function solveBat2(scores, allow, anchors) {
+const BAT_W = { u: 3, w1: 0.5, w2: 0.6, w3: 0.15, ek: 0.85 };
+function solveBat2(scores, allow, anchors, W8) {
+  const Wt = { ...BAT_W, ...(W8 || {}) };
   const n = scores.length, A = NA, wrap = d => ((d + A/2) % A + A) % A - A/2;
   const unary = scores.map((s, i) => {
     const u = new Float32Array(A);
-    if (s) { const arr = Array.from(s), m = percentile(arr, 0.5), mx = Math.max(...arr), den = (mx - m) || 1, conf = clamp((mx - m)/(m + 8), 0, 1); for (let a = 0; a < A; a++) u[a] = -((s[a] - m)/den)*conf; }
+    if (s) { const arr = Array.from(s), m = percentile(arr, 0.5), mx = Math.max(...arr), den = (mx - m) || 1, conf = clamp((mx - m)/(m + 8), 0, 1); for (let a = 0; a < A; a++) u[a] = -((s[a] - m)/den)*conf*Wt.u; }
     const an = anchors && anchors[i];
     if (an != null) for (let a = 0; a < A; a++) { const d = Math.abs(wrap(a - an)); u[a] += d <= 1 ? -6 : 8 + d*0.2; }
     return u;
@@ -621,14 +705,14 @@ function solveBat2(scores, allow, anchors) {
   for (let i = 1; i < n; i++) {
     const al = Math.max(1.5, Math.min(16, allow ? allow[i] : 8)), lim = Math.min(18, Math.ceil(al*1.8)), acc = Math.max(1.2, al*0.6);
     // how fast the bat should be turning right now, from how fast the hands move (direction unknown, speed known)
-    const e = Math.max(0, (al - 2)*0.85), sig = 1.5 + 0.35*e;
+    const e = Math.max(0, (al - 2)*Wt.ek), sig = 1.5 + 0.35*e;
     const nc = new Float32Array(A*A).fill(Infinity), bk = new Int8Array(A*A);
     for (let p = 0; p < A; p++) {
       for (let dq = -limPrev; dq <= limPrev; dq++) {
         const q = (p - dq + A) % A, c0 = cost[q*A + p]; if (c0 === Infinity) continue;
         for (let d = -lim; d <= lim; d++) {
           const a = (p + d + A) % A, k = p*A + a;
-          const v = c0 + 0.5*(d/al)**2 + 0.6*((d - dq)/acc)**2 + 0.45*((Math.abs(d) - e)/sig)**2;
+          const v = c0 + Wt.w1*(d/al)**2 + Wt.w2*((d - dq)/acc)**2 + Wt.w3*((Math.abs(d) - e)/sig)**2;
           if (v < nc[k]) { nc[k] = v; bk[k] = q; }
         }
       }
@@ -1119,7 +1203,7 @@ function addBatSpeed(seq) {
   seq.batOk = ok > 0.55;
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { NJ, JN, sideMap, cleanRaw, normalize, toPixel, solveBat, solveBat2, detectPhases, analyzeMotion, packRecord, seqFromRecord, alignIndex, lerpFrame, compareRecords, buildDemo, buildPro, buildFaulty, buildModel, MODELS, addBatSpeed, NA, angAt, P, mid, gauss1d, deriv, speedSeries };
+if (typeof module !== 'undefined' && module.exports) module.exports = { NJ, JN, sideMap, cleanRaw, unifyHands, detectSides, normalize, toPixel, solveBat, solveBat2, BAT_W, detectPhases, analyzeMotion, packRecord, seqFromRecord, alignIndex, lerpFrame, compareRecords, buildDemo, buildPro, buildFaulty, buildModel, MODELS, addBatSpeed, NA, angAt, P, mid, gauss1d, deriv, speedSeries };
 
 </script>
 <script>
@@ -1238,11 +1322,21 @@ function drawCrop(x, src, crop, s) {
 const gcv = document.createElement('canvas'); const gx = gcv.getContext('2d', { willReadFrequently: true });
 function waitEvt(el, ev, ms = 4000) { return new Promise(res => { let t; const h = () => { clearTimeout(t); el.removeEventListener(ev, h); res(true); }; el.addEventListener(ev, h); t = setTimeout(() => { el.removeEventListener(ev, h); res(false); }, ms); }); }
 async function seek(t) { if (Math.abs(vid.currentTime - t) < 1e-4) return; const p = waitEvt(vid, 'seeked', 3000); vid.currentTime = t; await p; }
+const LR = [[1, 2], [3, 4], [5, 6], [7, 8], [9, 10], [11, 12], [13, 14], [15, 16]];
 async function runPose(crop, src = vid, net = model) {
   const s = net === nets.precise ? 256 : 192, { c, x } = canFor(s);
   drawCrop(x, src, crop, s);
-  const out = tf.tidy(() => net.execute(tf.browser.fromPixels(c).toInt().expandDims(0)));
-  const d = await out.data(); out.dispose();
+  const mirror = net === nets.precise; // precise analysis: also look at the mirrored frame and merge the two (more accurate, fewer misses)
+  const out = tf.tidy(() => { const t = tf.browser.fromPixels(c).toInt().expandDims(0); return mirror ? tf.concat([net.execute(t), net.execute(t.reverse(2))], 0) : net.execute(t); });
+  const dd = await out.data(); out.dispose();
+  let d = dd;
+  if (mirror) {
+    const a = dd.subarray(0, 51), b = Float32Array.from(dd.subarray(51, 102));
+    for (let j = 0; j < 17; j++) b[j*3+1] = 1 - b[j*3+1];
+    for (const [p, q] of LR) for (let k = 0; k < 3; k++) { const t = b[p*3+k]; b[p*3+k] = b[q*3+k]; b[q*3+k] = t; }
+    d = new Float32Array(51);
+    for (let j = 0; j < 17; j++) { const wa = a[j*3+2], wb = b[j*3+2], ws = wa + wb + 1e-6; d[j*3] = (a[j*3]*wa + b[j*3]*wb)/ws; d[j*3+1] = (a[j*3+1]*wa + b[j*3+1]*wb)/ws; d[j*3+2] = Math.max(wa, wb)*0.5 + (wa + wb)*0.25; }
+  }
   const k = new Float32Array(51); let sc = 0;
   for (let j = 0; j < 17; j++) { k[j*3] = crop.x + d[j*3+1]*crop.s; k[j*3+1] = crop.y + d[j*3]*crop.s; k[j*3+2] = d[j*3+2]; sc += d[j*3+2]; }
   return { k, score: sc/17, used: crop };
@@ -1366,7 +1460,8 @@ async function probeFps() {
 function applyBatPath(seq) {
   const b = st.batCtx, nz = b.nz, path = solveBat2(b.scores, b.allow, b.anchors);
   const tl = b.taps.slice().sort((x, y) => x - y), L = tl.length ? clamp(tl[tl.length >> 1], 0.3*nz.H, 0.7*nz.H) : b.L;
-  seq.batTips = b.hands.map(([hx, hy], i) => { const p = path[i], a = p.angleIdx*5*Math.PI/180; return { x: (hx + Math.cos(a)*L - nz.originX)*nz.fwd/nz.H, y: (hy + Math.sin(a)*L - nz.groundY)/nz.H, c: p.conf }; });
+  b.tipsPx = b.hands.map(([hx, hy], i) => { const a = path[i].angleIdx*5*Math.PI/180; return [hx + Math.cos(a)*L, hy + Math.sin(a)*L]; });
+  seq.batTips = b.tipsPx.map(([tx, ty], i) => ({ x: (tx - nz.originX)*nz.fwd/nz.H, y: (ty - nz.groundY)/nz.H, c: path[i].conf }));
   addBatSpeed(seq); seq.batOk = seq.batOk || Object.keys(b.anchors).length >= 2;
 }
 async function analyzeFile(file, opts = {}) {
@@ -1433,8 +1528,8 @@ async function analyzeFile(file, opts = {}) {
     }
     if (found < times.length*0.4) throw new Error('Could not find a player in most frames. Keep the whole body in frame, in good light, with nobody else close by.');
     msg('Scoring mechanics…', 0.95);
-    const clean = cleanRaw(raw, 1.0);
-    const nz = normalize(clean, leadLeft);
+    const clean = cleanRaw(kind === 'hit' ? unifyHands(raw) : raw, 1.0);
+    let nz = normalize(clean, leadLeft);
     const seq = { ...nz, fps: perReal, slow, vw: W, vh: H, kind }; // H stays the player's body height in pixels
     if (kind === 'hit') {
       // second look at each frame for the bat, now that the joints are cleaned up
@@ -1449,16 +1544,28 @@ async function analyzeFile(file, opts = {}) {
       const hsS = gauss1d(hs, 2), quietTh = 0.36/perReal; // ~0.36 body heights per second
       const firstFast = hsS.findIndex(v => v > quietTh*2.5);
       const scores = clean.map((k, i) => batScores(k, W, H, dets[i], (firstFast < 0 || i < firstFast) && hsS[i] < quietTh*2.5, grays[i], grays[i-1], grays[i+1]));
-      const allow = hs.map(v => 2 + 80*v);
+      let pk = 0; hsS.forEach((v, i) => { if (v > hsS[pk]) pk = i; });
+      // during the swing the barrel can whip around even as the hands slow down, so let it turn freely there
+      const allow = hs.map((v, i) => (i >= pk - Math.round(0.15*perReal) && i <= pk + Math.round(0.8*perReal)) ? Math.max(12, 2 + 80*v) : 2 + 80*v);
       const lens = batState.lens.slice().sort((a, b) => a - b);
       const L = (lens.length >= 3 ? clamp(lens[lens.length >> 1], 0.32, 0.62) : 0.45)*nz.H;
       st.batCtx = { scores, allow, hands: clean.map(k => [(k[27] + k[30])/2, (k[28] + k[31])/2]), L, nz, anchors: {}, taps: [] };
       applyBatPath(seq);
     } else st.batCtx = null;
+    // which side leads and where the pitcher is, from the motion itself
+    const sides = detectSides(clean, kind, perReal, st.batCtx ? st.batCtx.tipsPx : null);
+    if (sides && sides.conf > 0.15) {
+      const nz2 = normalize(clean, sides.leadLeft, sides); Object.assign(seq, nz2); nz = nz2;
+      if (st.batCtx) { st.batCtx.nz = nz2; applyBatPath(seq); }
+      if (sides.leadLeft !== leadLeft) {
+        const L2 = sides.leadLeft ? 'R' : 'L'; st.hand[kind] = L2; saveUi(); syncHand(); persistPlayer();
+        toast(`${currentPlayer().name} ${kind === 'hit' ? 'bats' : 'throws'} ${L2 === 'L' ? 'left' : 'right'}-handed in this video, so it was analyzed that way and the setting was updated.`);
+      }
+    }
     st.times = times; st.seq = seq;
     st.res = analyzeMotion(seq, kind);
     afterAnalysis();
-    if (nz.autoSwapped) toast('Lead leg looked like the other side, so the tracker used the leg that strides. Check the Bats / Throws setting.');
+    if (nz.autoSwapped && !(sides && sides.conf > 0.15)) toast('Lead leg looked like the other side, so the tracker used the leg that strides. Check the Bats / Throws setting.');
   } catch (e) {
     if (e.message === 'cancel') { loadDemo(); toast('Analysis canceled.'); }
     else { loadDemo(); toast(e.message || 'Something went wrong while analyzing.'); }
@@ -1866,18 +1973,31 @@ function renderReport() {
       <div class="score-txt">
         <div class="eyebrow">Mechanics score · ${esc(kind === 'hit' ? 'Hitting' : 'Pitching')}</div>
         <h2>${gradeWord(r.overall)}</h2>
-        <p class="muted small">${fixes.length ? `${fixes.length} thing${fixes.length > 1 ? 's' : ''} to work on. Biggest: <b style="color:var(--ink)">${esc(fixes[0].label.toLowerCase())}</b>.` : 'Every check is inside the target range.'}</p>
+        <p class="muted small">${fixes.length ? `${fixes.length} thing${fixes.length > 1 ? 's' : ''} to work on.` : 'Every check is inside the target range.'}</p>
       </div>
     </div>
+    ${fixes.length ? `<ol class="top-fixes">${fixes.slice(0, 3).map((m, i) => `<li><span class="n">${i + 1}</span><div><b>${esc(m.label)}</b> <span class="pill ${m.status}">${m.status === 'fix' ? 'Fix' : 'Watch'}</span>${m.cue ? `<p class="small">${esc(m.cue)}</p>` : ''}${m.drill ? `<p class="small drill"><b>Drill:</b> ${esc(m.drill)}</p>` : ''}<button class="linkbtn" data-goto="${esc(m.phase)}">Show me</button></div></li>`).join('')}</ol>` : ''}
     ${st.source === 'demo' ? `<p class="note" style="margin-top:12px">This is the pro model: a 3D ${kind === 'hit' ? 'swing' : 'delivery'} built from published biomechanics of pro ${kind === 'hit' ? 'hitters' : 'pitchers'}, shown from the camera angle you film from. When you analyze your own video, the pro model is laid over it in purple, lined up phase by phase.</p>` : ''}
   </div>
 
   ${st.moments && st.moments.length ? `<div class="card">
     <div class="eyebrow">Key moments</div>
-    <h2>Tap to zoom in</h2>
+    <h2>Tap one to zoom in</h2>
     <div class="moments" id="moments">${st.moments.map((mo, k) => `<button class="moment ${mo.status}" data-moment="${k}"><canvas data-m="${k}" aria-hidden="true"></canvas><span class="mt">${esc(mo.title)}</span><span class="ms">${mo.status === 'phase' ? esc(mo.sub) : `<span class="pill ${mo.status}">${mo.status === 'fix' ? 'Fix' : 'Watch'}</span> ${esc(mo.sub)}`}</span><span class="mtime">${(() => { const ms = Math.round((mo.i - st.res.phases.key)/st.seq.fps*1000); return ms === 0 ? esc(st.res.phases.keyName) : (ms > 0 ? '+' : '') + ms + ' ms'; })()}</span></button>`).join('')}</div>
-    <p class="note" style="margin-top:8px">The app picked these from the phases of the ${MODE[kind].noun} and every check that needs work. Tap one to jump there and zoom the video onto that part of the body.</p>
   </div>` : ''}
+  <div class="card">
+    <div class="eyebrow">Library</div>
+    <h2>${st.source === 'library' ? 'Saved rep' : 'Save this rep'}</h2>
+    ${st.source === 'library' ? `<p class="muted small">This rep is in your library.</p><div style="margin-top:10px"><button class="btn" data-cmpa="${esc(st.recId || '')}">Compare side by side</button></div>` : st.source === 'demo' ? `<p class="muted small">Analyze your own ${M.noun} to save it. Saved reps keep the skeleton and numbers so you can compare future reps against them.</p>` : st.saved ? `<p class="small">Saved to your library under ${esc(currentPlayer().name)}.</p><div style="margin-top:10px"><button class="btn" data-cmpa="${esc(st.recId || '')}">Compare with another player</button></div>` : `
+    <div class="save-row"><input type="text" id="saveName" value="${esc(st.name)}" aria-label="Name for this rep" maxlength="60"><button class="btn primary" id="saveBtn">Save</button></div>
+    <label class="check" style="margin-top:10px"><input type="checkbox" id="saveBase" ${baselineFor(kind) ? '' : 'checked'}> Make this my baseline ${M.noun}</label>
+    <p class="note" style="margin-top:6px">Saves the skeleton, phases and numbers. The video stays on your phone.${store.kind === 'local' ? ' Saved on this device.' : ''}</p>`}
+    <div class="opt" style="margin-top:14px"><label for="cmpSel">Compare with</label>
+      <select id="cmpSel" style="flex:1;min-width:0"><option value="">Nothing</option>${modelOptions(kind, st.compareRec && st.compareRec.id)}${recOpts.map(x => `<option value="${esc(x.id)}" ${st.compareRec && st.compareRec.id === x.id ? 'selected' : ''}>${esc(x.name)}${st.prefs['base_' + kind] === x.id ? ' ★' : ''} · ${x.overall}</option>`).join('')}</select>
+    </div>
+    ${!recOpts.length ? `<p class="note" style="margin-top:6px">Save a few ${M.nouns} to compare against them here.</p>` : ''}
+  </div>
+  <details class="more" id="moreReport"><summary>Full report</summary><div class="more-body">
   ${cmp ? `<div class="card">
     <div class="eyebrow">Compared with</div>
     <h2>${esc(st.compareRec.name)}</h2>
@@ -1901,7 +2021,7 @@ function renderReport() {
       `<div><b>${Number.isFinite(info.armSlot) ? Math.round(info.armSlot) + '°' : '—'}</b><span>Arm slot at release (0° sidearm, 90° over the top)</span></div>
       <div><b>${mph(info.handSpeed)}</b><span>Hand speed at release, estimate</span></div>`}
     </div>
-    <p class="note" style="margin-top:8px">Tap <b>Energy flow</b> under the video to color each body part by its speed and watch the wave move up the body.</p>
+    <p class="note" style="margin-top:8px">Turn on <b>Energy flow</b> under Layers to color each body part by its speed and watch the wave move up the body.</p>
   </div>
 
   <div class="card">
@@ -1927,19 +2047,9 @@ function renderReport() {
     <p class="note" style="margin-top:6px">The dashed green skeleton is your own motion with these fixes applied. Arrows show where each joint should move.</p>
   </div>
 
-  <div class="card">
-    <div class="eyebrow">Library</div>
-    <h2>${st.source === 'library' ? 'Saved rep' : 'Save this rep'}</h2>
-    ${st.source === 'library' ? `<p class="muted small">This rep is in your library.</p><div style="margin-top:10px"><button class="btn" data-cmpa="${esc(st.recId || '')}">Compare side by side</button></div>` : st.source === 'demo' ? `<p class="muted small">Analyze your own ${M.noun} to save it. Saved reps keep the skeleton and numbers so you can compare future reps against them.</p>` : st.saved ? `<p class="small">Saved to your library under ${esc(currentPlayer().name)}.</p><div style="margin-top:10px"><button class="btn" data-cmpa="${esc(st.recId || '')}">Compare with another player</button></div>` : `
-    <div class="save-row"><input type="text" id="saveName" value="${esc(st.name)}" aria-label="Name for this rep" maxlength="60"><button class="btn primary" id="saveBtn">Save</button></div>
-    <label class="check" style="margin-top:10px"><input type="checkbox" id="saveBase" ${baselineFor(kind) ? '' : 'checked'}> Make this my baseline ${M.noun}</label>
-    <p class="note" style="margin-top:6px">Saves the skeleton, phases and numbers. The video stays on your phone.${store.kind === 'local' ? ' Saved on this device.' : ''}</p>`}
-    <div class="opt" style="margin-top:14px"><label for="cmpSel">Compare with</label>
-      <select id="cmpSel" style="flex:1;min-width:0"><option value="">Nothing</option>${modelOptions(kind, st.compareRec && st.compareRec.id)}${recOpts.map(x => `<option value="${esc(x.id)}" ${st.compareRec && st.compareRec.id === x.id ? 'selected' : ''}>${esc(x.name)}${st.prefs['base_' + kind] === x.id ? ' ★' : ''} · ${x.overall}</option>`).join('')}</select>
-    </div>
-    ${!recOpts.length ? `<p class="note" style="margin-top:6px">Save a few ${M.nouns} to compare against them here.</p>` : ''}
-  </div>
-  <p class="note">Measured from one camera in 2D, so angles and distances are estimates. ${kind === 'hit' ? 'Bat position is estimated from the image. ' : ''}Use the numbers to compare your own reps filmed the same way.</p>`;
+  <p class="note" style="padding:0 16px">Measured from one camera in 2D, so angles and distances are estimates. ${kind === 'hit' ? 'Bat position is estimated from the image. ' : ''}Use the numbers to compare your own reps filmed the same way.</p></div></details>`;
+  if (st.source === 'demo') { const sc = $('cmpSel') && $('cmpSel').closest('.card'); if (sc) sc.hidden = true; }
+  const more = $('moreReport'); if (more) { try { more.open = sessionStorage.getItem('swinglab.more') === '1'; } catch {} more.addEventListener('toggle', () => { try { sessionStorage.setItem('swinglab.more', more.open ? '1' : '0'); } catch {} if (more.open) requestAnimationFrame(drawChart); }); }
   requestAnimationFrame(drawChart);
   if (st.moments) requestAnimationFrame(() => { (st.moments || []).forEach((mo, k) => { const el = document.querySelector(`#moments canvas[data-m="${k}"]`); if (el && !st.hasVideo) drawThumb(el, mo); }); if (st.hasVideo) buildMomentThumbs(); });
 }
@@ -2053,11 +2163,12 @@ function setMode(m) {
   if (st.busy) { toast('Wait for the current analysis to finish.'); return; }
   st.mode = m; saveUi(); st.recId = null;
   $('mHit').setAttribute('aria-pressed', m === 'hit'); $('mPitch').setAttribute('aria-pressed', m === 'pitch');
-  const M = MODE[m]; $('capTitle').textContent = M.title; $('recLbl').textContent = M.rec; $('handLbl').textContent = M.hand;
+  const M = MODE[m]; $('capTitle').textContent = M.title; $('recLbl').textContent = $('camBtn').hidden ? M.rec : 'Upload video'; $('handLbl').textContent = M.hand;
   $('tipsList').innerHTML = M.tips.map(t => `<li>${esc(t)}</li>`).join('');
   syncHand(); loadDemo(); renderAll();
 }
-function syncHand() { const h = st.hand[st.mode]; $('hR').setAttribute('aria-pressed', h === 'R'); $('hL').setAttribute('aria-pressed', h === 'L'); }
+function whoLine() { const el = $('whoLine'); if (!el) return; const p = currentPlayer(); el.textContent = `${p.name} · ${st.mode === 'hit' ? 'Bats' : 'Throws'} ${st.hand[st.mode] === 'L' ? 'L' : 'R'} · ${fmtHt(st.heightIn)}`; }
+function syncHand() { setTimeout(whoLine); const h = st.hand[st.mode]; $('hR').setAttribute('aria-pressed', h === 'R'); $('hL').setAttribute('aria-pressed', h === 'L'); }
 function renderAll() { syncPlayers(); if (st.tab === 'Compare' && !document.activeElement?.closest?.('#vCompare select')) renderCompare(); if (st.tab === 'Library') renderLibrary(); if (st.tab === 'Game') renderGameDay(); if (st.res && st.tab === 'Analyze' && !document.activeElement?.closest?.('#report')) renderReport(); }
 let toastT; function toast(m) { const t = $('toast'); t.textContent = m; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 4200); }
 
@@ -2066,7 +2177,7 @@ $('tAnalyze').onclick = () => setTab('Analyze'); $('tLibrary').onclick = () => s
 $('hR').onclick = () => { st.hand[st.mode] = 'R'; saveUi(); syncHand(); persistPlayer(); };
 $('hL').onclick = () => { st.hand[st.mode] = 'L'; saveUi(); syncHand(); persistPlayer(); };
 $('slowSel').onchange = e => { st.slow = +e.target.value; };
-{ const hs = $('htSel'); for (let i = 48; i <= 82; i++) hs.insertAdjacentHTML('beforeend', `<option value="${i}" ${i === st.heightIn ? 'selected' : ''}>${Math.floor(i/12)}′${i%12}″</option>`); hs.onchange = e => { st.heightIn = +e.target.value; saveUi(); persistPlayer(); if (st.res) renderReport(); }; }
+{ const hs = $('htSel'); for (let i = 48; i <= 82; i++) hs.insertAdjacentHTML('beforeend', `<option value="${i}" ${i === st.heightIn ? 'selected' : ''}>${Math.floor(i/12)}′${i%12}″</option>`); hs.onchange = e => { st.heightIn = +e.target.value; saveUi(); persistPlayer(); whoLine(); if (st.res) renderReport(); }; }
 const onFile = e => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (!f) return; if (st.pendingCompare) { st.compareRec = st.records.find(r => r.id === st.pendingCompare) || null; st.pendingCompare = null; } analyzeFile(f).then(() => { if (st.compareRec) { prepCompare(); setStageMeta(); renderReport(); draw(); } }); };
 $('upIn').onchange = onFile;
 // The tap lands directly on the file input (no scripted click), which phones allow even inside embedded pages.
@@ -2080,6 +2191,10 @@ $('upIn').onchange = onFile;
   $('pickHelpClose').onclick = () => { $('pickHelp').hidden = true; };
 }
 $('procCancel').onclick = () => { st.cancel = true; };
+const SPEEDS = [1, 0.5, 0.25, 0.125], SPEED_LBL = { 1: '1×', 0.5: '½×', 0.25: '¼×', 0.125: '⅛×' };
+$('speedBtn').onclick = () => { st.speed = SPEEDS[(SPEEDS.indexOf(st.speed) + 1) % SPEEDS.length]; $('speedBtn').textContent = SPEED_LBL[st.speed]; if (st.hasVideo) vid.playbackRate = st.speed; };
+$('layersBtn').onclick = () => { const p = $('layerPanel'); p.hidden = !p.hidden; $('layersBtn').setAttribute('aria-expanded', !p.hidden); };
+$('setupBtn').onclick = () => { const p = $('setupPanel'); p.hidden = !p.hidden; $('setupBtn').setAttribute('aria-expanded', !p.hidden); };
 $('batFix').onclick = () => setBatFix(!batFix.on);
 $('batFixDone').onclick = () => { setBatFix(false); toast('Bat path updated from your taps.'); };
 $('batFixClear').onclick = () => { if (!st.batCtx) return; st.batCtx.anchors = {}; st.batCtx.taps = []; applyBatPath(st.seq); refreshAfterBat(); updateBatFixBar(); };
@@ -2676,9 +2791,9 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && cam
 
 /* ---------------- standalone extras: backup, install, offline ---------------- */
 $('camBtn').hidden = false;
-$('recBtn').classList.remove('primary');
+$('recBtn').classList.remove('primary'); $('recLbl').textContent = 'Upload video';
 $('recLbl').dataset.standalone = '1';
-$('recHint').innerHTML = '<b>Record</b> opens the camera right here and tracks the skeleton live. <b>Upload</b> takes a clip you already filmed, including slo-mo.';
+$('recHint').innerHTML = '<b>Record</b> films right here with a live skeleton. <b>Upload video</b> takes a clip you already shot, including slo-mo (set Clip to match).';
 $('storeTag').textContent = 'Saved on this phone';
 $('libNote').textContent = 'Each rep stores the skeleton, phases and numbers, not the video. Reps are saved on this phone, so back up your library now and then.';
 $('backupRow').hidden = false;

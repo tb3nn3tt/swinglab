@@ -113,11 +113,21 @@ function drawCrop(x, src, crop, s) {
 const gcv = document.createElement('canvas'); const gx = gcv.getContext('2d', { willReadFrequently: true });
 function waitEvt(el, ev, ms = 4000) { return new Promise(res => { let t; const h = () => { clearTimeout(t); el.removeEventListener(ev, h); res(true); }; el.addEventListener(ev, h); t = setTimeout(() => { el.removeEventListener(ev, h); res(false); }, ms); }); }
 async function seek(t) { if (Math.abs(vid.currentTime - t) < 1e-4) return; const p = waitEvt(vid, 'seeked', 3000); vid.currentTime = t; await p; }
+const LR = [[1, 2], [3, 4], [5, 6], [7, 8], [9, 10], [11, 12], [13, 14], [15, 16]];
 async function runPose(crop, src = vid, net = model) {
   const s = net === nets.precise ? 256 : 192, { c, x } = canFor(s);
   drawCrop(x, src, crop, s);
-  const out = tf.tidy(() => net.execute(tf.browser.fromPixels(c).toInt().expandDims(0)));
-  const d = await out.data(); out.dispose();
+  const mirror = net === nets.precise; // precise analysis: also look at the mirrored frame and merge the two (more accurate, fewer misses)
+  const out = tf.tidy(() => { const t = tf.browser.fromPixels(c).toInt().expandDims(0); return mirror ? tf.concat([net.execute(t), net.execute(t.reverse(2))], 0) : net.execute(t); });
+  const dd = await out.data(); out.dispose();
+  let d = dd;
+  if (mirror) {
+    const a = dd.subarray(0, 51), b = Float32Array.from(dd.subarray(51, 102));
+    for (let j = 0; j < 17; j++) b[j*3+1] = 1 - b[j*3+1];
+    for (const [p, q] of LR) for (let k = 0; k < 3; k++) { const t = b[p*3+k]; b[p*3+k] = b[q*3+k]; b[q*3+k] = t; }
+    d = new Float32Array(51);
+    for (let j = 0; j < 17; j++) { const wa = a[j*3+2], wb = b[j*3+2], ws = wa + wb + 1e-6; d[j*3] = (a[j*3]*wa + b[j*3]*wb)/ws; d[j*3+1] = (a[j*3+1]*wa + b[j*3+1]*wb)/ws; d[j*3+2] = Math.max(wa, wb)*0.5 + (wa + wb)*0.25; }
+  }
   const k = new Float32Array(51); let sc = 0;
   for (let j = 0; j < 17; j++) { k[j*3] = crop.x + d[j*3+1]*crop.s; k[j*3+1] = crop.y + d[j*3]*crop.s; k[j*3+2] = d[j*3+2]; sc += d[j*3+2]; }
   return { k, score: sc/17, used: crop };
@@ -241,7 +251,8 @@ async function probeFps() {
 function applyBatPath(seq) {
   const b = st.batCtx, nz = b.nz, path = solveBat2(b.scores, b.allow, b.anchors);
   const tl = b.taps.slice().sort((x, y) => x - y), L = tl.length ? clamp(tl[tl.length >> 1], 0.3*nz.H, 0.7*nz.H) : b.L;
-  seq.batTips = b.hands.map(([hx, hy], i) => { const p = path[i], a = p.angleIdx*5*Math.PI/180; return { x: (hx + Math.cos(a)*L - nz.originX)*nz.fwd/nz.H, y: (hy + Math.sin(a)*L - nz.groundY)/nz.H, c: p.conf }; });
+  b.tipsPx = b.hands.map(([hx, hy], i) => { const a = path[i].angleIdx*5*Math.PI/180; return [hx + Math.cos(a)*L, hy + Math.sin(a)*L]; });
+  seq.batTips = b.tipsPx.map(([tx, ty], i) => ({ x: (tx - nz.originX)*nz.fwd/nz.H, y: (ty - nz.groundY)/nz.H, c: path[i].conf }));
   addBatSpeed(seq); seq.batOk = seq.batOk || Object.keys(b.anchors).length >= 2;
 }
 async function analyzeFile(file, opts = {}) {
@@ -308,8 +319,8 @@ async function analyzeFile(file, opts = {}) {
     }
     if (found < times.length*0.4) throw new Error('Could not find a player in most frames. Keep the whole body in frame, in good light, with nobody else close by.');
     msg('Scoring mechanics…', 0.95);
-    const clean = cleanRaw(raw, 1.0);
-    const nz = normalize(clean, leadLeft);
+    const clean = cleanRaw(kind === 'hit' ? unifyHands(raw) : raw, 1.0);
+    let nz = normalize(clean, leadLeft);
     const seq = { ...nz, fps: perReal, slow, vw: W, vh: H, kind }; // H stays the player's body height in pixels
     if (kind === 'hit') {
       // second look at each frame for the bat, now that the joints are cleaned up
@@ -324,16 +335,28 @@ async function analyzeFile(file, opts = {}) {
       const hsS = gauss1d(hs, 2), quietTh = 0.36/perReal; // ~0.36 body heights per second
       const firstFast = hsS.findIndex(v => v > quietTh*2.5);
       const scores = clean.map((k, i) => batScores(k, W, H, dets[i], (firstFast < 0 || i < firstFast) && hsS[i] < quietTh*2.5, grays[i], grays[i-1], grays[i+1]));
-      const allow = hs.map(v => 2 + 80*v);
+      let pk = 0; hsS.forEach((v, i) => { if (v > hsS[pk]) pk = i; });
+      // during the swing the barrel can whip around even as the hands slow down, so let it turn freely there
+      const allow = hs.map((v, i) => (i >= pk - Math.round(0.15*perReal) && i <= pk + Math.round(0.8*perReal)) ? Math.max(12, 2 + 80*v) : 2 + 80*v);
       const lens = batState.lens.slice().sort((a, b) => a - b);
       const L = (lens.length >= 3 ? clamp(lens[lens.length >> 1], 0.32, 0.62) : 0.45)*nz.H;
       st.batCtx = { scores, allow, hands: clean.map(k => [(k[27] + k[30])/2, (k[28] + k[31])/2]), L, nz, anchors: {}, taps: [] };
       applyBatPath(seq);
     } else st.batCtx = null;
+    // which side leads and where the pitcher is, from the motion itself
+    const sides = detectSides(clean, kind, perReal, st.batCtx ? st.batCtx.tipsPx : null);
+    if (sides && sides.conf > 0.15) {
+      const nz2 = normalize(clean, sides.leadLeft, sides); Object.assign(seq, nz2); nz = nz2;
+      if (st.batCtx) { st.batCtx.nz = nz2; applyBatPath(seq); }
+      if (sides.leadLeft !== leadLeft) {
+        const L2 = sides.leadLeft ? 'R' : 'L'; st.hand[kind] = L2; saveUi(); syncHand(); persistPlayer();
+        toast(`${currentPlayer().name} ${kind === 'hit' ? 'bats' : 'throws'} ${L2 === 'L' ? 'left' : 'right'}-handed in this video, so it was analyzed that way and the setting was updated.`);
+      }
+    }
     st.times = times; st.seq = seq;
     st.res = analyzeMotion(seq, kind);
     afterAnalysis();
-    if (nz.autoSwapped) toast('Lead leg looked like the other side, so the tracker used the leg that strides. Check the Bats / Throws setting.');
+    if (nz.autoSwapped && !(sides && sides.conf > 0.15)) toast('Lead leg looked like the other side, so the tracker used the leg that strides. Check the Bats / Throws setting.');
   } catch (e) {
     if (e.message === 'cancel') { loadDemo(); toast('Analysis canceled.'); }
     else { loadDemo(); toast(e.message || 'Something went wrong while analyzing.'); }
@@ -741,18 +764,31 @@ function renderReport() {
       <div class="score-txt">
         <div class="eyebrow">Mechanics score · ${esc(kind === 'hit' ? 'Hitting' : 'Pitching')}</div>
         <h2>${gradeWord(r.overall)}</h2>
-        <p class="muted small">${fixes.length ? `${fixes.length} thing${fixes.length > 1 ? 's' : ''} to work on. Biggest: <b style="color:var(--ink)">${esc(fixes[0].label.toLowerCase())}</b>.` : 'Every check is inside the target range.'}</p>
+        <p class="muted small">${fixes.length ? `${fixes.length} thing${fixes.length > 1 ? 's' : ''} to work on.` : 'Every check is inside the target range.'}</p>
       </div>
     </div>
+    ${fixes.length ? `<ol class="top-fixes">${fixes.slice(0, 3).map((m, i) => `<li><span class="n">${i + 1}</span><div><b>${esc(m.label)}</b> <span class="pill ${m.status}">${m.status === 'fix' ? 'Fix' : 'Watch'}</span>${m.cue ? `<p class="small">${esc(m.cue)}</p>` : ''}${m.drill ? `<p class="small drill"><b>Drill:</b> ${esc(m.drill)}</p>` : ''}<button class="linkbtn" data-goto="${esc(m.phase)}">Show me</button></div></li>`).join('')}</ol>` : ''}
     ${st.source === 'demo' ? `<p class="note" style="margin-top:12px">This is the pro model: a 3D ${kind === 'hit' ? 'swing' : 'delivery'} built from published biomechanics of pro ${kind === 'hit' ? 'hitters' : 'pitchers'}, shown from the camera angle you film from. When you analyze your own video, the pro model is laid over it in purple, lined up phase by phase.</p>` : ''}
   </div>
 
   ${st.moments && st.moments.length ? `<div class="card">
     <div class="eyebrow">Key moments</div>
-    <h2>Tap to zoom in</h2>
+    <h2>Tap one to zoom in</h2>
     <div class="moments" id="moments">${st.moments.map((mo, k) => `<button class="moment ${mo.status}" data-moment="${k}"><canvas data-m="${k}" aria-hidden="true"></canvas><span class="mt">${esc(mo.title)}</span><span class="ms">${mo.status === 'phase' ? esc(mo.sub) : `<span class="pill ${mo.status}">${mo.status === 'fix' ? 'Fix' : 'Watch'}</span> ${esc(mo.sub)}`}</span><span class="mtime">${(() => { const ms = Math.round((mo.i - st.res.phases.key)/st.seq.fps*1000); return ms === 0 ? esc(st.res.phases.keyName) : (ms > 0 ? '+' : '') + ms + ' ms'; })()}</span></button>`).join('')}</div>
-    <p class="note" style="margin-top:8px">The app picked these from the phases of the ${MODE[kind].noun} and every check that needs work. Tap one to jump there and zoom the video onto that part of the body.</p>
   </div>` : ''}
+  <div class="card">
+    <div class="eyebrow">Library</div>
+    <h2>${st.source === 'library' ? 'Saved rep' : 'Save this rep'}</h2>
+    ${st.source === 'library' ? `<p class="muted small">This rep is in your library.</p><div style="margin-top:10px"><button class="btn" data-cmpa="${esc(st.recId || '')}">Compare side by side</button></div>` : st.source === 'demo' ? `<p class="muted small">Analyze your own ${M.noun} to save it. Saved reps keep the skeleton and numbers so you can compare future reps against them.</p>` : st.saved ? `<p class="small">Saved to your library under ${esc(currentPlayer().name)}.</p><div style="margin-top:10px"><button class="btn" data-cmpa="${esc(st.recId || '')}">Compare with another player</button></div>` : `
+    <div class="save-row"><input type="text" id="saveName" value="${esc(st.name)}" aria-label="Name for this rep" maxlength="60"><button class="btn primary" id="saveBtn">Save</button></div>
+    <label class="check" style="margin-top:10px"><input type="checkbox" id="saveBase" ${baselineFor(kind) ? '' : 'checked'}> Make this my baseline ${M.noun}</label>
+    <p class="note" style="margin-top:6px">Saves the skeleton, phases and numbers. The video stays on your phone.${store.kind === 'local' ? ' Saved on this device.' : ''}</p>`}
+    <div class="opt" style="margin-top:14px"><label for="cmpSel">Compare with</label>
+      <select id="cmpSel" style="flex:1;min-width:0"><option value="">Nothing</option>${modelOptions(kind, st.compareRec && st.compareRec.id)}${recOpts.map(x => `<option value="${esc(x.id)}" ${st.compareRec && st.compareRec.id === x.id ? 'selected' : ''}>${esc(x.name)}${st.prefs['base_' + kind] === x.id ? ' ★' : ''} · ${x.overall}</option>`).join('')}</select>
+    </div>
+    ${!recOpts.length ? `<p class="note" style="margin-top:6px">Save a few ${M.nouns} to compare against them here.</p>` : ''}
+  </div>
+  <details class="more" id="moreReport"><summary>Full report</summary><div class="more-body">
   ${cmp ? `<div class="card">
     <div class="eyebrow">Compared with</div>
     <h2>${esc(st.compareRec.name)}</h2>
@@ -776,7 +812,7 @@ function renderReport() {
       `<div><b>${Number.isFinite(info.armSlot) ? Math.round(info.armSlot) + '°' : '—'}</b><span>Arm slot at release (0° sidearm, 90° over the top)</span></div>
       <div><b>${mph(info.handSpeed)}</b><span>Hand speed at release, estimate</span></div>`}
     </div>
-    <p class="note" style="margin-top:8px">Tap <b>Energy flow</b> under the video to color each body part by its speed and watch the wave move up the body.</p>
+    <p class="note" style="margin-top:8px">Turn on <b>Energy flow</b> under Layers to color each body part by its speed and watch the wave move up the body.</p>
   </div>
 
   <div class="card">
@@ -802,19 +838,9 @@ function renderReport() {
     <p class="note" style="margin-top:6px">The dashed green skeleton is your own motion with these fixes applied. Arrows show where each joint should move.</p>
   </div>
 
-  <div class="card">
-    <div class="eyebrow">Library</div>
-    <h2>${st.source === 'library' ? 'Saved rep' : 'Save this rep'}</h2>
-    ${st.source === 'library' ? `<p class="muted small">This rep is in your library.</p><div style="margin-top:10px"><button class="btn" data-cmpa="${esc(st.recId || '')}">Compare side by side</button></div>` : st.source === 'demo' ? `<p class="muted small">Analyze your own ${M.noun} to save it. Saved reps keep the skeleton and numbers so you can compare future reps against them.</p>` : st.saved ? `<p class="small">Saved to your library under ${esc(currentPlayer().name)}.</p><div style="margin-top:10px"><button class="btn" data-cmpa="${esc(st.recId || '')}">Compare with another player</button></div>` : `
-    <div class="save-row"><input type="text" id="saveName" value="${esc(st.name)}" aria-label="Name for this rep" maxlength="60"><button class="btn primary" id="saveBtn">Save</button></div>
-    <label class="check" style="margin-top:10px"><input type="checkbox" id="saveBase" ${baselineFor(kind) ? '' : 'checked'}> Make this my baseline ${M.noun}</label>
-    <p class="note" style="margin-top:6px">Saves the skeleton, phases and numbers. The video stays on your phone.${store.kind === 'local' ? ' Saved on this device.' : ''}</p>`}
-    <div class="opt" style="margin-top:14px"><label for="cmpSel">Compare with</label>
-      <select id="cmpSel" style="flex:1;min-width:0"><option value="">Nothing</option>${modelOptions(kind, st.compareRec && st.compareRec.id)}${recOpts.map(x => `<option value="${esc(x.id)}" ${st.compareRec && st.compareRec.id === x.id ? 'selected' : ''}>${esc(x.name)}${st.prefs['base_' + kind] === x.id ? ' ★' : ''} · ${x.overall}</option>`).join('')}</select>
-    </div>
-    ${!recOpts.length ? `<p class="note" style="margin-top:6px">Save a few ${M.nouns} to compare against them here.</p>` : ''}
-  </div>
-  <p class="note">Measured from one camera in 2D, so angles and distances are estimates. ${kind === 'hit' ? 'Bat position is estimated from the image. ' : ''}Use the numbers to compare your own reps filmed the same way.</p>`;
+  <p class="note" style="padding:0 16px">Measured from one camera in 2D, so angles and distances are estimates. ${kind === 'hit' ? 'Bat position is estimated from the image. ' : ''}Use the numbers to compare your own reps filmed the same way.</p></div></details>`;
+  if (st.source === 'demo') { const sc = $('cmpSel') && $('cmpSel').closest('.card'); if (sc) sc.hidden = true; }
+  const more = $('moreReport'); if (more) { try { more.open = sessionStorage.getItem('swinglab.more') === '1'; } catch {} more.addEventListener('toggle', () => { try { sessionStorage.setItem('swinglab.more', more.open ? '1' : '0'); } catch {} if (more.open) requestAnimationFrame(drawChart); }); }
   requestAnimationFrame(drawChart);
   if (st.moments) requestAnimationFrame(() => { (st.moments || []).forEach((mo, k) => { const el = document.querySelector(`#moments canvas[data-m="${k}"]`); if (el && !st.hasVideo) drawThumb(el, mo); }); if (st.hasVideo) buildMomentThumbs(); });
 }
@@ -928,11 +954,12 @@ function setMode(m) {
   if (st.busy) { toast('Wait for the current analysis to finish.'); return; }
   st.mode = m; saveUi(); st.recId = null;
   $('mHit').setAttribute('aria-pressed', m === 'hit'); $('mPitch').setAttribute('aria-pressed', m === 'pitch');
-  const M = MODE[m]; $('capTitle').textContent = M.title; $('recLbl').textContent = M.rec; $('handLbl').textContent = M.hand;
+  const M = MODE[m]; $('capTitle').textContent = M.title; $('recLbl').textContent = $('camBtn').hidden ? M.rec : 'Upload video'; $('handLbl').textContent = M.hand;
   $('tipsList').innerHTML = M.tips.map(t => `<li>${esc(t)}</li>`).join('');
   syncHand(); loadDemo(); renderAll();
 }
-function syncHand() { const h = st.hand[st.mode]; $('hR').setAttribute('aria-pressed', h === 'R'); $('hL').setAttribute('aria-pressed', h === 'L'); }
+function whoLine() { const el = $('whoLine'); if (!el) return; const p = currentPlayer(); el.textContent = `${p.name} · ${st.mode === 'hit' ? 'Bats' : 'Throws'} ${st.hand[st.mode] === 'L' ? 'L' : 'R'} · ${fmtHt(st.heightIn)}`; }
+function syncHand() { setTimeout(whoLine); const h = st.hand[st.mode]; $('hR').setAttribute('aria-pressed', h === 'R'); $('hL').setAttribute('aria-pressed', h === 'L'); }
 function renderAll() { syncPlayers(); if (st.tab === 'Compare' && !document.activeElement?.closest?.('#vCompare select')) renderCompare(); if (st.tab === 'Library') renderLibrary(); if (st.tab === 'Game') renderGameDay(); if (st.res && st.tab === 'Analyze' && !document.activeElement?.closest?.('#report')) renderReport(); }
 let toastT; function toast(m) { const t = $('toast'); t.textContent = m; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 4200); }
 
@@ -941,7 +968,7 @@ $('tAnalyze').onclick = () => setTab('Analyze'); $('tLibrary').onclick = () => s
 $('hR').onclick = () => { st.hand[st.mode] = 'R'; saveUi(); syncHand(); persistPlayer(); };
 $('hL').onclick = () => { st.hand[st.mode] = 'L'; saveUi(); syncHand(); persistPlayer(); };
 $('slowSel').onchange = e => { st.slow = +e.target.value; };
-{ const hs = $('htSel'); for (let i = 48; i <= 82; i++) hs.insertAdjacentHTML('beforeend', `<option value="${i}" ${i === st.heightIn ? 'selected' : ''}>${Math.floor(i/12)}′${i%12}″</option>`); hs.onchange = e => { st.heightIn = +e.target.value; saveUi(); persistPlayer(); if (st.res) renderReport(); }; }
+{ const hs = $('htSel'); for (let i = 48; i <= 82; i++) hs.insertAdjacentHTML('beforeend', `<option value="${i}" ${i === st.heightIn ? 'selected' : ''}>${Math.floor(i/12)}′${i%12}″</option>`); hs.onchange = e => { st.heightIn = +e.target.value; saveUi(); persistPlayer(); whoLine(); if (st.res) renderReport(); }; }
 const onFile = e => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (!f) return; if (st.pendingCompare) { st.compareRec = st.records.find(r => r.id === st.pendingCompare) || null; st.pendingCompare = null; } analyzeFile(f).then(() => { if (st.compareRec) { prepCompare(); setStageMeta(); renderReport(); draw(); } }); };
 $('upIn').onchange = onFile;
 // The tap lands directly on the file input (no scripted click), which phones allow even inside embedded pages.
@@ -955,6 +982,10 @@ $('upIn').onchange = onFile;
   $('pickHelpClose').onclick = () => { $('pickHelp').hidden = true; };
 }
 $('procCancel').onclick = () => { st.cancel = true; };
+const SPEEDS = [1, 0.5, 0.25, 0.125], SPEED_LBL = { 1: '1×', 0.5: '½×', 0.25: '¼×', 0.125: '⅛×' };
+$('speedBtn').onclick = () => { st.speed = SPEEDS[(SPEEDS.indexOf(st.speed) + 1) % SPEEDS.length]; $('speedBtn').textContent = SPEED_LBL[st.speed]; if (st.hasVideo) vid.playbackRate = st.speed; };
+$('layersBtn').onclick = () => { const p = $('layerPanel'); p.hidden = !p.hidden; $('layersBtn').setAttribute('aria-expanded', !p.hidden); };
+$('setupBtn').onclick = () => { const p = $('setupPanel'); p.hidden = !p.hidden; $('setupBtn').setAttribute('aria-expanded', !p.hidden); };
 $('batFix').onclick = () => setBatFix(!batFix.on);
 $('batFixDone').onclick = () => { setBatFix(false); toast('Bat path updated from your taps.'); };
 $('batFixClear').onclick = () => { if (!st.batCtx) return; st.batCtx.anchors = {}; st.batCtx.taps = []; applyBatPath(st.seq); refreshAfterBat(); updateBatFixBar(); };
