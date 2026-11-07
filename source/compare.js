@@ -28,7 +28,7 @@ function buildEntry(id) {
   if (isModel(id)) {
     const key = id.slice(6), m = MODELS[key]; if (!m || !m.kinds.includes(kind)) return null;
     const seq = buildModel(kind, key);
-    e = { id, kind, label: m.label, player: m.label.replace(/ style$/, ''), heightIn: 72, seq, res: analyzeMotion(seq, kind), model: m };
+    e = { id, kind, label: m.label, player: m.label.replace(/ style.*$/, ''), heightIn: 72, seq, res: analyzeMotion(seq, kind), model: m };
   } else {
     const rec = st.records.find(r => r.id === id && r.kind === kind); if (!rec) return null;
     const seq = seqFromRecord(rec);

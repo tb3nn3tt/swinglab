@@ -373,7 +373,7 @@ const modelRecs = {};
 function modelRecord(kind, key = 'pro') {
   const ck = kind + ':' + key, m = MODELS[key];
   if (!m || !m.kinds.includes(kind)) return null;
-  if (!modelRecs[ck]) { const s = buildModel(kind, key), r = analyzeMotion(s, kind); modelRecs[ck] = packRecord(s, r, { id: 'model:' + key, name: m.label, player: m.label.replace(/ style$/, ''), heightIn: 72, createdAt: 0, hand: m.lefty ? 'L' : 'R', model: key }); }
+  if (!modelRecs[ck]) { const s = buildModel(kind, key), r = analyzeMotion(s, kind); modelRecs[ck] = packRecord(s, r, { id: 'model:' + key, name: m.label, player: m.label.replace(/ style.*$/, ''), heightIn: 72, createdAt: 0, hand: m.lefty ? 'L' : 'R', model: key }); }
   return modelRecs[ck];
 }
 const proRecord = kind => modelRecord(kind, 'pro');

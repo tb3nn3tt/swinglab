@@ -1,5 +1,5 @@
 // SwingLab offline cache. Bump VERSION when you publish changes.
-const VERSION = 'swinglab-v7';
+const VERSION = 'swinglab-v8';
 const CORE = ['./', './index.html', './manifest.webmanifest', './models/model.json', './models/movenet-lightning-weights.wasm', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'];
 const EXTRA = ['https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js'];
 self.addEventListener('install', e => {

@@ -740,7 +740,7 @@ function rotationSeries(frames, fps, a, b, refEnd) {
   const mi = argmin(w, Math.max(0, Math.floor(refEnd*0.5)), w.length-1);
   // width alone can't tell a coil (turned away from the pitcher) from opening, so use the order of events:
   // anything before the last moment the segment is square again (widest, just before the big turn) is coil → negative
-  const ws = gauss1d(w, 1.5); let pk = mi; while (pk > 0 && ws[pk-1] >= ws[pk] - 1e-6) pk--; // walk back from the big turn to the square moment
+  const ws = gauss1d(w, 1.5); let pk = mi; while (pk > 0 && ws[pk-1] < ws[pk]) pk--; while (pk > 0 && ws[pk-1] >= ws[pk] - 1e-6) pk--; // walk back from the big turn to the square moment
   let cmin = Infinity; for (let i = 0; i < pk; i++) cmin = Math.min(cmin, ws[i]);
   if (!(cmin < 0.96*ws[pk])) pk = 0; // no real coil before it
   const th = w.map((v, i) => { const t = Math.acos(clamp(v/w0, 0, 1))*DEG; return i > mi ? 180 - t : i < pk ? -t : t; });
@@ -1104,20 +1104,20 @@ function proKeys(kind, faults, style) {
     // stance 0–0.5, load to 0.85, stride lands 0.95, launch 1.00, contact 1.15, extension 1.23, finish to 1.75
     // In the stance the barrel is tipped toward the pitcher over the back shoulder, knob pointing down toward the catcher.
     const S = { stanceHalf: 0.15, stride: 0.18, kick: 0.03, crouch: 0, bend: 22, coil: -26, handsY: 0.80, handsX: -0.14, handsZ: 0.10, loadBack: 0.07,
-      batAz: 25, batEl: 52, depth: 0, extEl: -5, finishEl: 18, batLen: 0.40, finishRot: 158, tiltC: 20, ...(style || {}) };
+      batAz: 25, batEl: 52, depth: 0, extEl: -5, finishEl: 18, batLen: 0.40, finishRot: 158, tiltC: 20, open: 0, waggle: 0, elbowUp: 0, kneesIn: 0, ...(style || {}) };
     const TFP = 0.95, TC = 1.15, sh = S.stanceHalf, front = sh + (F.overstride ? S.stride + 0.19 : S.stride), cy = S.crouch, hy = S.handsY - cy, d = S.depth;
-    return { T: 1.85, fps: 60, batLen: S.batLen,
+    return { T: 1.85, fps: 60, batLen: S.batLen, waggle: S.waggle,
       pelvis: curve([[0, [0, 0.50 - cy, 0]], [0.5, [0, 0.50 - cy, 0]], [0.82, [-0.03, 0.495 - cy, 0]], [TFP, [0.03 + (front - sh - 0.18)*0.35, 0.47 - cy - (F.headDrop ? 0.02 : 0), 0]], [TC, [0.075 + (front - sh - 0.18)*0.4 + d*0.3, 0.468 - cy - (F.headDrop ? 0.06 : 0), 0.01]], [1.4, [0.09 + (front - sh - 0.18)*0.4, 0.47 - cy, 0]], [1.85, [0.08 + (front - sh - 0.18)*0.4, 0.49 - cy, 0]]]),
-      pelvisRot: curve([[0, 0], [0.5, 0], [0.84, -12], [TFP, 6], [1.04, 42], [1.10, 66], [TC, 80], [1.3, 98], [1.85, 104]]),
+      pelvisRot: curve([[0, S.open], [0.5, S.open], [0.84, -12], [TFP, 6], [1.04, 42], [1.10, 66], [TC, 80], [1.3, 98], [1.85, 104]]),
       torsoRot: curve(F.earlyOpen ? [[0, -4], [0.5, -6], [0.8, -14], [TFP, 32], [1.02, 55], [1.08, 78], [TC, 105], [1.3, 148], [1.85, 160]]
-        : [[0, -4], [0.5, -6], [0.84, S.coil], [TFP, S.coil + 4], [0.985, (S.coil + 4)*0.45], [1.02, 8], [1.06, 45], [1.10, 72], [TC, 86], [1.3, 140], [1.85, S.finishRot]]),
+        : [[0, -4 + S.open*0.9], [0.5, -6 + S.open*0.9], [0.84, S.coil], [TFP, S.coil + 4], [0.985, (S.coil + 4)*0.45], [1.02, 8], [1.06, 45], [1.10, 72], [TC, 86], [1.3, 140], [1.85, S.finishRot]]),
       tiltBack: curve([[0, 4], [0.84, 6], [TFP, 9], [TC, S.tiltC - (F.headDrop ? 6 : 0)], [1.4, 16], [1.85, 10]]),
       tiltZ: curve([[0, S.bend], [TFP, S.bend + 2], [TC, S.bend + 4 + (F.headDrop ? 14 : 0)], [1.5, 18], [1.85, 14]]),
       shTilt: curve([[0, 2], [0.84, 4], [TFP, 4], [TC, -14], [1.4, 10], [1.85, 14]]),
       headYaw: curve([[0, 82], [TC, 86], [1.4, 84], [1.85, 70]]), headDown: curve([[0, 8], [TFP, 10], [TC, 18], [1.35, 16], [1.85, 6]]),
       lAnkle: curve([[0, [sh, 0.045, -0.02]], [0.5, [sh, 0.045, -0.02]], [0.78, [sh - 0.04, 0.045 + S.kick, -0.03]], [0.88, [front - 0.05, 0.05 + S.kick*0.6, -0.02]], [TFP, [front, 0.045, -0.02]], [1.85, [front, 0.045, -0.02]]]),
       bAnkle: curve([[0, [-sh, 0.045, 0]], [TFP, [-sh, 0.045, 0]], [TC, [-sh + 0.015 + (F.backSlide ? 0.09 : 0), 0.07, 0.01]], [1.4, [-sh + 0.04 + (F.backSlide ? 0.09 : 0), 0.09, 0.02]], [1.85, [-sh + 0.05 + (F.backSlide ? 0.09 : 0), 0.09, 0.02]]]),
-      lKneePole: curve([[0, [0.1, 0, 1]], [0.84, [-0.5, 0, 1]], [TFP, [0.3, 0, 1]], [1.85, [0.6, 0, 0.6]]]), bKneePole: curve([[0, [-0.1, 0, 1]], [TC, [0.6, 0, 0.8]], [1.85, [0.8, 0, 0.4]]]),
+      lKneePole: curve([[0, S.kneesIn ? [-0.8, 0, 0.6] : [0.1, 0, 1]], [0.5, S.kneesIn ? [-0.8, 0, 0.6] : [0.1, 0, 1]], [0.84, [-0.5, 0, 1]], [TFP, [0.3, 0, 1]], [1.85, [0.6, 0, 0.6]]]), bKneePole: curve([[0, S.kneesIn ? [0.8, 0, 0.6] : [-0.1, 0, 1]], [0.5, S.kneesIn ? [0.8, 0, 0.6] : [-0.1, 0, 1]], [TC, [0.6, 0, 0.8]], [1.85, [0.8, 0, 0.4]]]),
       grip: curve([[0, [S.handsX, hy, S.handsZ]], [0.5, [S.handsX, hy, S.handsZ]], [0.84, [S.handsX - S.loadBack, hy, S.handsZ - 0.03]], [TFP, [S.handsX - S.loadBack, hy - 0.01, S.handsZ - 0.03]], [1.01, [S.handsX - S.loadBack + 0.02, hy - 0.04, S.handsZ - 0.01]],
         [1.045, F.cast ? [-0.15 + d*0.5, 0.74 - cy, 0.16] : [(S.handsX - S.loadBack + 0.02)*0.5 + (-0.09 + d)*0.5, (hy - 0.04)*0.5 + (0.70 - cy)*0.5, 0.1]],
         [1.08, F.cast ? [-0.08 + d, 0.71 - cy, 0.30] : [-0.09 + d, 0.70 - cy, 0.145]], [TC, [0.08 + d, 0.63 - cy, 0.20]], [1.23, [0.22 + d, 0.65 - cy, 0.12]], [1.4, [0.10, 0.84 - cy*0.5, -0.12]], [1.85, [0.0, 0.88 - cy*0.5, -0.16]]]),
@@ -1126,7 +1126,7 @@ function proKeys(kind, faults, style) {
       batEl: curve(F.dump ? [[0, S.batEl], [0.84, S.batEl + 3], [TFP, S.batEl + 8], [0.99, 62], [1.04, 48], [1.09, -28], [TC, -22], [1.23, -6], [1.4, 18], [1.85, 34]]
         : [[0, S.batEl], [0.84, S.batEl + 3], [TFP, S.batEl + 8], [0.99, 66], [1.04, 34], [1.08, 6], [TC, -14], [1.23, S.extEl], [1.4, S.finishEl], [1.85, S.finishEl + 16]]),
       lElbowPole: curve([[0, [0.2, -1, 0.3]], [TC, [0.2, -1, 0.4]], [1.4, [0.3, -0.6, 0.6]], [1.85, [0, -1, 0.3]]]),
-      bElbowPole: curve([[0, [-0.5, -1, 0]], [TFP, [-0.4, -1, -0.1]], [TC, [0, -1, 0.1]], [1.4, [0.4, -0.5, 0.5]], [1.85, [0.3, -0.8, 0.3]]]),
+      bElbowPole: curve([[0, S.elbowUp ? [-0.5, 0.9, 0.1] : [-0.5, -1, 0]], [0.6, S.elbowUp ? [-0.5, 0.9, 0.1] : [-0.5, -1, 0]], [TFP, [-0.4, -1, -0.1]], [TC, [0, -1, 0.1]], [1.4, [0.4, -0.5, 0.5]], [1.85, [0.3, -0.8, 0.3]]]),
     };
   }
   // pitching: set 0–0.6, leg lift peak 1.10, foot plant 1.55, arm cocked 1.64, release 1.69, follow-through to 2.15
@@ -1159,6 +1159,7 @@ function buildPro(kind, faults, style, lefty) {
     const t = i/K.fps, p = {};
     for (const k of Object.keys(K)) if (typeof K[k] === 'function') p[k] = K[k](t);
     if (kind === 'hit') {
+      if (K.waggle && t < 0.8) { const fade = Math.min(1, (0.8 - t)/0.2), ph = 2*Math.PI*2.3*t; p.batAz += K.waggle*Math.sin(ph)*fade; p.batEl += K.waggle*0.5*Math.sin(ph + 1.2)*fade; p.grip = v3.add(p.grip, [0.012*Math.sin(ph)*fade, 0.008*Math.sin(ph + 0.6)*fade, 0]); }
       const az = p.batAz/DEG, el = p.batEl/DEG, B = [Math.cos(el)*Math.cos(az), Math.sin(el), Math.cos(el)*Math.sin(az)];
       p.lWrist = v3.sub(p.grip, v3.mul(B, 0.03)); p.bWrist = v3.add(p.grip, v3.mul(B, 0.045));
       const r = poseFrom(p); frames.push(r.f);
@@ -1184,6 +1185,26 @@ const MODELS = {
     style: { stanceHalf: 0.14, stride: 0.10, kick: 0.01, crouch: 0.03, bend: 28, handsY: 0.75, handsX: -0.14, handsZ: 0.12, loadBack: 0.06, batAz: 40, batEl: 45, coil: -18, depth: -0.015, extEl: -8, finishEl: 8, finishRot: 140, tiltC: 14 } },
   ruth: { label: 'Babe Ruth style', kinds: ['hit'], lefty: true, blurb: 'Narrow stance, bat cocked back, a big aggressive stride into the ball, a steep uppercut, and a high finish with weight on the front foot.',
     style: { stanceHalf: 0.08, stride: 0.26, kick: 0.05, coil: -40, handsY: 0.80, handsX: -0.16, loadBack: 0.08, batLen: 0.45, batAz: 20, batEl: 45, extEl: 10, finishEl: 42, finishRot: 172, tiltC: 21 } },
+  // right-handed: classic swings
+  aaron: { label: 'Hank Aaron style', kinds: ['hit'], blurb: 'Relaxed and upright, hands close to the body, quick wrists, a level path, letting the ball get deep and hitting against a firm front leg.',
+    style: { stanceHalf: 0.14, stride: 0.15, kick: 0.02, handsY: 0.78, handsX: -0.12, handsZ: 0.09, loadBack: 0.06, batAz: 30, batEl: 55, coil: -22, depth: -0.02, extEl: -8, finishEl: 14, tiltC: 16 } },
+  trout: { label: 'Mike Trout style', kinds: ['hit'], blurb: 'Deep in the box, a big balanced leg kick, knob pointed at the catcher and hands tight, back foot dragging through contact, and a strong two-handed finish.',
+    style: { stanceHalf: 0.15, stride: 0.19, kick: 0.09, handsY: 0.80, handsX: -0.15, loadBack: 0.08, batAz: 22, batEl: 50, coil: -30, extEl: 2, finishEl: 24, finishRot: 165 } },
+  cabrera: { label: 'Miguel Cabrera style', kinds: ['hit'], blurb: 'Wide and quiet with a short stride, hands relaxed by the back shoulder, letting the ball travel and driving it to the opposite field.',
+    style: { stanceHalf: 0.19, stride: 0.09, kick: 0.01, crouch: 0.02, bend: 26, handsY: 0.80, handsX: -0.13, batAz: 35, batEl: 50, coil: -20, depth: -0.03, extEl: -6, finishEl: 16 } },
+  manny: { label: 'Manny Ramirez style', kinds: ['hit'], blurb: 'Hands high with the bat straight up, a small leg kick, loose and relaxed, then a smooth, long extension.',
+    style: { stanceHalf: 0.15, stride: 0.15, kick: 0.04, handsY: 0.86, handsX: -0.11, batAz: 60, batEl: 78, coil: -26, extEl: 0, finishEl: 22 } },
+  // right-handed: funny stances
+  franco: { label: 'Julio Franco style (funny)', kinds: ['hit'], blurb: 'Crouched with knees pinched in and rear stuck out, back elbow above the ear, bat held high over the head and pointed at the pitcher.',
+    style: { stanceHalf: 0.16, stride: 0.12, kick: 0.02, crouch: 0.04, bend: 32, kneesIn: 1, elbowUp: 1, handsY: 0.95, handsX: -0.06, handsZ: 0.05, loadBack: 0.10, batAz: 2, batEl: 14, coil: -22 } },
+  youkilis: { label: 'Kevin Youkilis style (funny)', kinds: ['hit'], blurb: 'Upright with locked knees and pigeon toes, back elbow up by the ear, bat held over the head pointing at the pitcher, top hand barely on it.',
+    style: { stanceHalf: 0.13, stride: 0.13, kick: 0.02, bend: 12, kneesIn: 1, elbowUp: 1, handsY: 0.97, handsX: -0.08, handsZ: 0.04, loadBack: 0.09, batAz: -5, batEl: 22, coil: -24, waggle: 6 } },
+  batista: { label: 'Tony Batista style (funny)', kinds: ['hit'], blurb: 'Fully open: chest facing the pitcher head-on, knees locked, waving the bat in front of his face, then pulling it back just in time.',
+    style: { stanceHalf: 0.14, stride: 0.10, kick: 0.03, bend: 10, open: 80, handsY: 0.82, handsX: 0.02, handsZ: 0.14, loadBack: 0.16, batAz: 70, batEl: 60, coil: -18, waggle: 18 } },
+  sheffield: { label: 'Gary Sheffield style (funny)', kinds: ['hit'], blurb: 'The bat never stops wiggling toward the pitcher, then a big leg kick and one of the most violent swings ever.',
+    style: { stanceHalf: 0.15, stride: 0.17, kick: 0.10, handsY: 0.80, handsX: -0.13, loadBack: 0.08, batAz: 15, batEl: 40, coil: -32, waggle: 22, finishEl: 30, finishRot: 170 } },
+  bagwell: { label: 'Jeff Bagwell style (funny)', kinds: ['hit'], blurb: 'A low squat with the feet spread almost the full length of the box, a conventional upper body, and almost no stride.',
+    style: { stanceHalf: 0.30, stride: 0.04, kick: 0.0, crouch: 0.08, bend: 28, handsY: 0.80, handsX: -0.12, batAz: 30, batEl: 50, coil: -20, tiltC: 16 } },
   faults: { label: 'Common faults', kinds: ['hit', 'pitch'], blurb: 'Overstrides, drops the head, opens early, dumps the barrel, casts and slides the back foot.' },
 };
 function buildModel(kind, key) {
@@ -1582,7 +1603,7 @@ const modelRecs = {};
 function modelRecord(kind, key = 'pro') {
   const ck = kind + ':' + key, m = MODELS[key];
   if (!m || !m.kinds.includes(kind)) return null;
-  if (!modelRecs[ck]) { const s = buildModel(kind, key), r = analyzeMotion(s, kind); modelRecs[ck] = packRecord(s, r, { id: 'model:' + key, name: m.label, player: m.label.replace(/ style$/, ''), heightIn: 72, createdAt: 0, hand: m.lefty ? 'L' : 'R', model: key }); }
+  if (!modelRecs[ck]) { const s = buildModel(kind, key), r = analyzeMotion(s, kind); modelRecs[ck] = packRecord(s, r, { id: 'model:' + key, name: m.label, player: m.label.replace(/ style.*$/, ''), heightIn: 72, createdAt: 0, hand: m.lefty ? 'L' : 'R', model: key }); }
   return modelRecs[ck];
 }
 const proRecord = kind => modelRecord(kind, 'pro');
@@ -2306,7 +2327,7 @@ function buildEntry(id) {
   if (isModel(id)) {
     const key = id.slice(6), m = MODELS[key]; if (!m || !m.kinds.includes(kind)) return null;
     const seq = buildModel(kind, key);
-    e = { id, kind, label: m.label, player: m.label.replace(/ style$/, ''), heightIn: 72, seq, res: analyzeMotion(seq, kind), model: m };
+    e = { id, kind, label: m.label, player: m.label.replace(/ style.*$/, ''), heightIn: 72, seq, res: analyzeMotion(seq, kind), model: m };
   } else {
     const rec = st.records.find(r => r.id === id && r.kind === kind); if (!rec) return null;
     const seq = seqFromRecord(rec);

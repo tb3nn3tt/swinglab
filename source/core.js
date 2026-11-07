@@ -235,7 +235,7 @@ function rotationSeries(frames, fps, a, b, refEnd) {
   const mi = argmin(w, Math.max(0, Math.floor(refEnd*0.5)), w.length-1);
   // width alone can't tell a coil (turned away from the pitcher) from opening, so use the order of events:
   // anything before the last moment the segment is square again (widest, just before the big turn) is coil → negative
-  const ws = gauss1d(w, 1.5); let pk = mi; while (pk > 0 && ws[pk-1] >= ws[pk] - 1e-6) pk--; // walk back from the big turn to the square moment
+  const ws = gauss1d(w, 1.5); let pk = mi; while (pk > 0 && ws[pk-1] < ws[pk]) pk--; while (pk > 0 && ws[pk-1] >= ws[pk] - 1e-6) pk--; // walk back from the big turn to the square moment
   let cmin = Infinity; for (let i = 0; i < pk; i++) cmin = Math.min(cmin, ws[i]);
   if (!(cmin < 0.96*ws[pk])) pk = 0; // no real coil before it
   const th = w.map((v, i) => { const t = Math.acos(clamp(v/w0, 0, 1))*DEG; return i > mi ? 180 - t : i < pk ? -t : t; });
