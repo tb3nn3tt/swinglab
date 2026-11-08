@@ -631,6 +631,8 @@ function stageMap(w, h) {
 }
 /* zoom: a focus region (from a key moment) or following the player; video and overlay move together */
 const zoom = { s: 1, tx: 0, ty: 0, follow: false, focus: null };
+const coach = { on: false, list: [], k: 0, state: 'idle', t0: 0, hold: 7000, saved: null, speed: 1, raf: 0 };
+
 function zoomTarget(base, w, h, i) {
   let box = null;
   if (zoom.focus) box = zoom.focus.box;
@@ -638,8 +640,10 @@ function zoomTarget(base, w, h, i) {
   if (!box) return { s: 1, tx: 0, ty: 0 };
   const a = base.map(box.x0, box.y0), b = base.map(box.x1, box.y1);
   const bw = Math.abs(b[0] - a[0]), bh = Math.abs(b[1] - a[1]), cx = (a[0] + b[0])/2, cy = (a[1] + b[1])/2;
-  const s = clamp(Math.min(w/(bw*1.2), h/(bh*1.2)), 1, 3.5);
-  return { s, tx: w/2 - cx*s, ty: h/2 - cy*s };
+  // while the coach card covers the bottom of the picture, frame the problem in the space above it
+  let vh = h; if (coach.on && coach.state === 'hold') { const c = $('coachCard'); if (c && !c.hidden) vh = Math.max(h*0.35, h - (c.offsetHeight + 16)*(w/Math.max(1, $('stage').clientWidth))); }
+  const s = clamp(Math.min(w/(bw*1.25), vh/(bh*1.25)), 1, 3.5);
+  return { s, tx: w/2 - cx*s, ty: vh/2 - cy*s };
 }
 function draw() {
   const { ctx, w, h, dpr } = canvasCtx(); ctx.clearRect(0, 0, w, h);
@@ -678,12 +682,13 @@ function draw() {
   if (st.layers.bat && tips && st.mode === 'hit') {
     ctx.save(); ctx.lineCap = 'round';
     const a = Math.max(r.phases.start, i - 14);
-    for (let k = a + 1; k <= i; k++) { const p = tips[k-1], q = tips[k]; if (!p || !q || p.c < 0.2 || q.c < 0.2) continue; const t = (k - a)/(i - a + 1); ctx.strokeStyle = `rgba(255,79,163,${0.15 + 0.7*t})`; ctx.lineWidth = Math.max(2, scale*0.01)*(0.5 + t); const P1 = map(p.x, p.y), Q1 = map(q.x, q.y); ctx.beginPath(); ctx.moveTo(P1[0], P1[1]); ctx.lineTo(Q1[0], Q1[1]); ctx.stroke(); }
+    for (let k = coach.on ? i + 1 : a + 1; k <= i; k++) { const p = tips[k-1], q = tips[k]; if (!p || !q || p.c < 0.2 || q.c < 0.2) continue; const t = (k - a)/(i - a + 1); ctx.strokeStyle = `rgba(255,79,163,${0.15 + 0.7*t})`; ctx.lineWidth = Math.max(2, scale*0.01)*(0.5 + t); const P1 = map(p.x, p.y), Q1 = map(q.x, q.y); ctx.beginPath(); ctx.moveTo(P1[0], P1[1]); ctx.lineTo(Q1[0], Q1[1]); ctx.stroke(); }
     if (st.batCtx && st.batCtx.anchors[i] != null && tips[i]) { const tp = map(tips[i].x, tips[i].y); ctx.save(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2*dpr; ctx.beginPath(); ctx.arc(tp[0], tp[1], 9*dpr, 0, Math.PI*2); ctx.stroke(); ctx.restore(); }
     const b = tips[i]; if (b && b.c > 0.2) { const hnd = map((f[18]+f[20])/2, (f[19]+f[21])/2), tp = map(b.x, b.y); ctx.strokeStyle = '#FF4FA3'; ctx.lineWidth = Math.max(3, scale*0.022); ctx.beginPath(); ctx.moveTo(hnd[0], hnd[1]); ctx.lineTo(tp[0], tp[1]); ctx.stroke(); ctx.strokeStyle = 'rgba(7,12,18,.7)'; ctx.lineWidth = Math.max(1, scale*0.004); ctx.stroke(); }
     ctx.restore();
   }
   if (st.layers.zone && st.mode === 'hit') drawZone(ctx, map, scale, i, dpr);
+  if (coach.on && coach.state === 'hold') drawCoach(ctx, map, scale, i, f);
   if (st.layers.skel) drawSkel(ctx, f, map, { colors, scale, leadLeft: st.seq.leadLeft, energy: st.layers.energy ? st.energy[i] : null });
   // hud
   const ph = currentPhase(i); $('hudPhase').textContent = ph;
@@ -737,12 +742,13 @@ function loop(ts) {
   if (st.playing && st.res) {
     const r = st.res;
     if (st.hasVideo) {
-      const i = frameAtTime(vid.currentTime); st.frame = i;
-      if (i >= r.phases.end || vid.ended) { vid.pause(); seekFrame(r.phases.start); setTimeout(() => { if (st.playing) vid.play().catch(() => {}); }, 350); }
+      const i = frameAtTime(vid.currentTime); st.frame = i; coachTick(i);
+      if (coach.on && !st.playing) { draw(); st.lastTs = ts; requestAnimationFrame(loop); return; }
+      if (i >= r.phases.end || vid.ended) { if (coach.on) { coachStop(); st.lastTs = ts; requestAnimationFrame(loop); return; } vid.pause(); seekFrame(r.phases.start); setTimeout(() => { if (st.playing) vid.play().catch(() => {}); }, 350); }
     } else {
       const dt = (ts - st.lastTs)/1000; st.fpos += dt*st.seq.fps*st.speed;
-      if (st.fpos > r.phases.end + st.seq.fps*0.4) st.fpos = r.phases.start;
-      st.frame = Math.min(r.phases.end, st.fpos);
+      if (st.fpos > r.phases.end + st.seq.fps*0.4) { if (coach.on) { coachStop(); st.lastTs = ts; requestAnimationFrame(loop); return; } st.fpos = r.phases.start; }
+      st.frame = Math.min(r.phases.end, st.fpos); coachTick(Math.round(st.frame));
     }
     draw();
   }
@@ -1061,10 +1067,10 @@ $('batFixDone').onclick = () => { setBatFix(false); toast('Bat path updated from
 $('batFixClear').onclick = () => { if (!st.batCtx) return; st.batCtx.anchors = {}; st.batCtx.taps = []; applyBatPath(st.seq); refreshAfterBat(); updateBatFixBar(); };
 $('zoomReset').onclick = () => { zoom.focus = null; $('zoomReset').hidden = true; draw(); };
 $('zoomFollow').onclick = e => { zoom.follow = !zoom.follow; e.currentTarget.setAttribute('aria-pressed', zoom.follow); if (zoom.follow) { zoom.focus = null; $('zoomReset').hidden = true; } draw(); };
-$('bPlay').onclick = () => st.playing ? pause() : play();
+$('bPlay').onclick = () => { if (coach.on && coach.state === 'hold') { coachNext(); return; } st.playing ? pause() : play(); };
 $('bPrev').onclick = () => { pause(); seekFrame(st.frame - 1); };
 $('bNext').onclick = () => { pause(); seekFrame(st.frame + 1); };
-$('scrub').oninput = e => { pause(); seekFrame(+e.target.value); };
+$('scrub').oninput = e => { coachStop(); pause(); seekFrame(+e.target.value); };
 document.querySelectorAll('[data-speed]').forEach(b => b.onclick = () => { st.speed = +b.dataset.speed; document.querySelectorAll('[data-speed]').forEach(x => x.setAttribute('aria-pressed', x === b)); if (st.hasVideo) vid.playbackRate = st.speed; });
 $('layerChips').onclick = e => { const b = e.target.closest('[data-layer]'); if (!b) return; const k = b.dataset.layer; st.layers[k] = !st.layers[k]; b.setAttribute('aria-pressed', st.layers[k]); if (k === 'video') sizeStage(); setStageMeta(); draw(); };
 $('phaseChips').onclick = e => { const b = e.target.closest('[data-name]'); if (!b) return; pause(); seekFrame(st.res.phases.list.find(p => p[0] === b.dataset.name)[1]); };
@@ -1180,6 +1186,90 @@ function drawZone(ctx, map, scale, i, dpr) {
   ctx.restore();
 }
 
+/* ---------------- coach mode ----------------
+   Plays the swing at full speed, slows down into each problem, freezes and zooms on it, and shows the player
+   his pose next to what it should be (only that one fix, so it stays readable), then speeds back up. */
+function coachPlan() {
+  const r = st.res, kind = r.kind, out = [];
+  for (const m of r.metrics) {
+    if ((m.status !== 'fix' && m.status !== 'watch') || typeof m.fix !== 'function') continue;
+    const i = (r.phases.list.find(p => p[0] === m.phase) || [0, r.phases.key])[1], area = ROI[kind][m.key] || 'body';
+    let ideal = null; try { ideal = st.seq.frames.map((f, j) => { const o = Float32Array.from(f); m.fix(o, j); return o; }); } catch {}
+    const msg = (m.value > m.hi ? m.high : m.low) || '', drill = m.value > m.hi ? m.drillHigh : m.drillLow;
+    out.push({ m, i, area, ideal, box: roiBox(i, area), joints: roiJoints(area, sideMap(st.seq.leadLeft)), msg, drill });
+  }
+  return out.sort((a, b) => a.i - b.i || a.m.score - b.m.score);
+}
+function setRate(r) { coach.speed = r; st.speed = r; if (st.hasVideo) vid.playbackRate = r; }
+function coachStart(k = 0, showNow = false) {
+  if (!st.res || st.busy) return;
+  const list = coachPlan(); if (!list.length) { toast('Nothing to fix on this rep. Nice swing.'); return; }
+  if (!coach.on) coach.saved = { layers: { ...st.layers }, speed: st.speed };
+  coach.on = true; coach.list = list; coach.k = clamp(k, 0, list.length - 1);
+  $('stage').closest('.stage-card').classList.add('coaching'); $('fsCoach').textContent = 'Stop coaching'; $('coachBtn').textContent = 'Stop';
+  // keep the picture clean while it plays: skeleton and bat only
+  Object.assign(st.layers, { skel: true, bat: st.mode === 'hit', zone: false, past: false, ideal: false, energy: false });
+  syncLayerChips();
+  if (showNow) { pause(); seekFrame(list[coach.k].i); coachHold(); return; }
+  zoom.focus = null; coach.state = 'play'; $('coachCard').hidden = true;
+  pause(); seekFrame(Math.max(st.res.phases.start, list[coach.k].i - Math.round(0.9*st.seq.fps))); setRate(1); play();
+}
+function coachStop() {
+  if (!coach.on) return; coach.on = false; coach.state = 'idle'; cancelAnimationFrame(coach.raf);
+  $('stage').closest('.stage-card').classList.remove('coaching'); $('fsCoach').textContent = 'Coach me'; $('coachBtn').textContent = 'Coach';
+  $('coachCard').hidden = true; zoom.focus = null;
+  if (coach.saved) { Object.assign(st.layers, coach.saved.layers); setRate(coach.saved.speed); $('speedBtn').textContent = SPEED_LBL[st.speed] || $('speedBtn').textContent; }
+  syncLayerChips(); pause(); draw();
+}
+function syncLayerChips() { document.querySelectorAll('[data-layer]').forEach(b => b.setAttribute('aria-pressed', !!st.layers[b.dataset.layer])); if (typeof fsSync === 'function' && $('fsChips')) fsSync(); }
+function coachHold() {
+  const it = coach.list[coach.k]; coach.state = 'hold'; coach.t0 = performance.now();
+  zoom.focus = { box: it.box, title: it.m.label };
+  const card = $('coachCard'); card.hidden = false; card.classList.toggle('watch', it.m.status === 'watch');
+  $('coachN').textContent = `${coach.k + 1} of ${coach.list.length}`; $('coachT').textContent = it.m.label;
+  $('coachMsg').textContent = it.msg; $('coachDrill').textContent = it.drill || ''; $('coachDrill').hidden = !it.drill;
+  $('coachBack').disabled = coach.k === 0; $('coachNext').textContent = coach.k === coach.list.length - 1 ? 'Finish' : 'Next';
+  cancelAnimationFrame(coach.raf);
+  const tick = now => { if (!coach.on || coach.state !== 'hold') return; const p = Math.min(1, (now - coach.t0)/coach.hold); $('coachBar').style.width = (p*100) + '%'; draw(); if (p >= 1) { coachNext(); return; } coach.raf = requestAnimationFrame(tick); };
+  coach.raf = requestAnimationFrame(tick);
+}
+function coachNext() {
+  if (!coach.on) return; cancelAnimationFrame(coach.raf);
+  if (coach.k >= coach.list.length - 1) { // play out the rest of the swing, then stop
+    coach.state = 'tail'; coach.k = coach.list.length; zoom.focus = null; $('coachCard').hidden = true; setRate(1); play(); return; }
+  const cur = coach.list[coach.k].i; coach.k++;
+  zoom.focus = null; $('coachCard').hidden = true; coach.state = 'play';
+  if (coach.list[coach.k].i <= cur) { seekFrame(coach.list[coach.k].i); coachHold(); return; } // same moment: show it right away
+  setRate(1); play();
+}
+function coachBack() { if (!coach.on || coach.k === 0) return; cancelAnimationFrame(coach.raf); coach.k--; pause(); seekFrame(coach.list[coach.k].i); coachHold(); }
+// called from the playback loop with the current frame
+function coachTick(i) {
+  if (!coach.on) return;
+  if (coach.state === 'tail') { if (i >= st.res.phases.end - 1) coachStop(); return; }
+  if (coach.state !== 'play') return;
+  const it = coach.list[coach.k]; if (!it) return;
+  const slowFrom = it.i - Math.round(0.35*st.seq.fps);
+  if (i >= it.i) { pause(); seekFrame(it.i); coachHold(); }
+  else if (i >= slowFrom && coach.speed !== 0.2) setRate(0.2);
+}
+// overlay while frozen on a problem: his pose, the corrected pose for this one fix, arrows on the joints that move, and a pose that morphs between them
+function drawCoach(ctx, map, scale, i, f) {
+  const it = coach.list[coach.k]; if (!it || !it.ideal) return;
+  const g = it.ideal[i], gcol = css('--ghost'), t = (Math.sin((performance.now() - coach.t0)/1000*Math.PI*0.9 - Math.PI/2) + 1)/2;
+  drawSkel(ctx, g, map, { color: gcol, dash: true, scale, alpha: 0.95, leadLeft: st.seq.leadLeft });
+  const mid = Float32Array.from(f, (v, j) => v + (g[j] - v)*t);
+  drawSkel(ctx, mid, map, { color: '#E9EEF4', scale, alpha: 0.35 + 0.25*t, leadLeft: st.seq.leadLeft });
+  for (let j = 0; j < 17; j++) { const d = Math.hypot(g[j*2]-f[j*2], g[j*2+1]-f[j*2+1]); if (d > 0.012 && (it.joints.includes(j) || d > 0.03)) arrow(ctx, map(f[j*2], f[j*2+1]), map(g[j*2], g[j*2+1]), gcol, Math.max(2, scale*0.008)); }
+  // ring the problem area
+  const js = it.joints; let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const j of js) { const p = map(f[j*2], f[j*2+1]); x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); }
+  const pad = scale*0.04; ctx.save(); ctx.strokeStyle = it.m.status === 'watch' ? '#E8B44A' : '#F0654F'; ctx.lineWidth = Math.max(2, scale*0.006); ctx.setLineDash([scale*0.02, scale*0.014]);
+  ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(x0 - pad, y0 - pad, x1 - x0 + 2*pad, y1 - y0 + 2*pad, scale*0.03); else ctx.rect(x0 - pad, y0 - pad, x1 - x0 + 2*pad, y1 - y0 + 2*pad); ctx.stroke(); ctx.restore();
+}
+$('coachBtn').onclick = () => coach.on ? coachStop() : coachStart(0);
+$('fsCoach').onclick = () => coach.on ? coachStop() : coachStart(0);
+$('coachNext').onclick = coachNext; $('coachBack').onclick = coachBack; $('coachStop').onclick = coachStop;
+
 /* ---------------- full screen: show a player his swing with the skeleton, the fixed form and his good swing ---------------- */
 function fsOptions() {
   const kind = st.mode, recs = recsFor(kind).filter(x => x.id !== st.recId), base = st.prefs['base_' + kind];
@@ -1192,7 +1282,7 @@ function fsFixes() {
   const r = st.res; if (!r) { $('fsFixes').innerHTML = ''; return; }
   const fixes = r.metrics.filter(m => m.status === 'fix' || m.status === 'watch').sort((a, b) => a.score - b.score).slice(0, 3);
   const z = zoneInfo();
-  $('fsFixes').innerHTML = (z ? `<span class="fs-fix zone"><b>Zone</b>${Math.round(z.inches)} in · ${Math.round(z.ms)} ms</span>` : '') + fixes.map((m, i) => `<button class="fs-fix ${m.status}" type="button" data-fsgo="${esc(m.phase)}"><b>${i + 1}</b>${esc(m.label)}</button>`).join('');
+  $('fsFixes').innerHTML = (z ? `<span class="fs-fix zone"><b>Zone</b>${Math.round(z.inches)} in · ${Math.round(z.ms)} ms</span>` : '') + fixes.map((m, i) => `<button class="fs-fix ${m.status}" type="button" data-fsgo="${esc(m.phase)}" data-fskey="${esc(m.key)}"><b>${i + 1}</b>${esc(m.label)}</button>`).join('');
 }
 function fsSync() { document.querySelectorAll('[data-fsl]').forEach(b => b.setAttribute('aria-pressed', !!st.layers[b.dataset.fsl])); document.querySelector('[data-fsl="bat"]').hidden = st.mode !== 'hit' || !st.seq || !st.seq.batTips; document.querySelector('[data-fsl="zone"]').hidden = st.mode !== 'hit' || !zoneInfo(); }
 function setCompare(v) {
@@ -1209,6 +1299,7 @@ function enterFs() {
   requestAnimationFrame(() => { if (st.res) { computeViewBox(); draw(); } });
 }
 function exitFs() {
+  coachStop();
   const card = $('stage').closest('.stage-card'); card.classList.remove('fs'); document.documentElement.classList.remove('fs-open');
   try { if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {}); else if (document.webkitFullscreenElement && document.webkitExitFullscreen) document.webkitExitFullscreen(); } catch {}
   try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch {}
@@ -1220,6 +1311,6 @@ document.addEventListener('fullscreenchange', () => { if (!document.fullscreenEl
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('stage').closest('.stage-card').classList.contains('fs')) exitFs(); });
 $('fsChips').onclick = e => { const b = e.target.closest('[data-fsl]'); if (!b) return; const k = b.dataset.fsl; st.layers[k] = !st.layers[k]; const m = document.querySelector(`[data-layer="${k}"]`); if (m) m.setAttribute('aria-pressed', st.layers[k]); fsSync(); setStageMeta(); draw(); };
 $('fsCmp').onchange = e => setCompare(e.target.value);
-$('fsFixes').onclick = e => { const b = e.target.closest('[data-fsgo]'); if (!b || !st.res) return; pause(); seekFrame(st.res.phases.list.find(p => p[0] === b.dataset.fsgo)?.[1] ?? st.res.phases.key); if (!st.layers.ideal) { st.layers.ideal = true; fsSync(); } draw(); };
+$('fsFixes').onclick = e => { const b = e.target.closest('[data-fsgo]'); if (!b || !st.res) return; { const list = coachPlan(), k = list.findIndex(x => x.m.key === b.dataset.fskey); if (k >= 0) { coachStart(k, true); return; } } pause(); seekFrame(st.res.phases.list.find(p => p[0] === b.dataset.fsgo)?.[1] ?? st.res.phases.key); if (!st.layers.ideal) { st.layers.ideal = true; fsSync(); } draw(); };
 window.__swinglab = { st, applyBatPath: () => st.seq && applyBatPath(st.seq), zone: () => { zoneCache = { res: null }; return zoneInfo(); }, seek: i => { pause(); seekFrame(i); } }; // test hook for the automated checks
 })();

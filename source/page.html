@@ -147,6 +147,27 @@ details.tips ul { margin: 8px 0 0; padding-left: 18px; color: var(--ink-2); font
 
 /* stage */
 .stage-card { padding: 0; overflow: hidden; }
+/* coach mode: plays the swing, slows into each problem, freezes and zooms on it, shows now vs should-be */
+.coach { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 5; max-width: 560px; margin: 0 auto; background: rgba(9,14,21,.92); color: #E9EEF4; border: 1px solid rgba(233,238,244,.16); border-radius: 14px; padding: 10px 12px; backdrop-filter: blur(6px); }
+.coach-top { display: flex; gap: 10px; align-items: baseline; }
+.coach-n { font: 600 12px/1 var(--f-mono, monospace); color: #F0654F; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+.coach.watch .coach-n { color: #E8B44A; }
+.coach-t { font-weight: 700; font-size: 16px; }
+.coach-msg { margin: 5px 0 3px; font-size: 13.5px; line-height: 1.35; color: #C9D3DE; }
+.coach-drill { margin: 0 0 4px; font-size: 12.5px; line-height: 1.35; color: #9AA8B6; }
+.coach-drill::before { content: 'Drill: '; font-weight: 700; color: #E9EEF4; }
+.coach-key { margin: 0 0 8px; font-size: 12px; color: #9AA8B6; display: flex; gap: 8px; align-items: center; }
+.coach-key .sw.dash { background: none; border: 2px dashed var(--ghost); width: 14px; height: 0; border-radius: 0; }
+.coach-bar { height: 3px; background: rgba(233,238,244,.14); border-radius: 2px; overflow: hidden; margin-bottom: 10px; }
+.coach-bar i { display: block; height: 100%; width: 0; background: #E9EEF4; }
+.coach-btns { display: flex; gap: 8px; }
+.coach-btns button { flex: 1; min-height: 38px; border-radius: 10px; border: 1px solid rgba(233,238,244,.2); background: transparent; color: inherit; font: 600 14px/1 inherit; cursor: pointer; }
+.coach-btns .go { background: #E9EEF4; color: #0B1118; border-color: transparent; }
+.stage-card.coaching .fs-chips, .stage-card.coaching .fs-cmp, .stage-card.coaching .fs-fixes { display: none !important; }
+.fs-top { display: flex; gap: 8px; width: 100%; }
+.fs-top .tool { flex: 1; }
+.tool.go { background: var(--accent, #E8B44A); color: #14100A; border-color: transparent; }
+
 /* full screen: the stage fills the screen, controls stay underneath */
 .fs-bar { display: none; }
 .stage-card.fs { position: fixed; inset: 0; z-index: 60; border-radius: 0; margin: 0; display: flex; flex-direction: column; background: var(--stage);
@@ -369,7 +390,7 @@ i.dot.good { background: var(--good); } i.dot.watch { background: var(--watch); 
             <span class="src-tag" id="srcTag">Sample data</span>
           </div>
           <div class="fs-bar" id="fsBar">
-            <button class="tool" id="fsExit" type="button">Exit</button>
+            <div class="fs-top"><button class="tool" id="fsExit" type="button">Exit</button><button class="tool go" id="fsCoach" type="button">Coach me</button></div>
             <div class="chips fs-chips" id="fsChips">
               <button class="chip" data-fsl="skel" aria-pressed="true"><i class="sw" style="background:var(--lead)"></i>Skeleton</button>
               <button class="chip" data-fsl="ideal" aria-pressed="true"><i class="sw" style="background:var(--ghost)"></i>Fixed form</button>
@@ -384,6 +405,14 @@ i.dot.good { background: var(--good); } i.dot.watch { background: var(--watch); 
             <canvas id="cv"></canvas>
             <div class="hud"><span class="ph" id="hudPhase">Stance</span><span id="hudTime">0 ms</span></div>
             <button class="zoom-reset" id="zoomReset" type="button" hidden>Reset zoom</button>
+            <div class="coach" id="coachCard" hidden>
+              <div class="coach-top"><span class="coach-n" id="coachN">1 of 3</span><span class="coach-t" id="coachT">Head movement</span></div>
+              <p class="coach-msg" id="coachMsg"></p>
+              <p class="coach-drill" id="coachDrill" hidden></p>
+              <p class="coach-key"><i class="sw" style="background:#E9EEF4"></i>Now <i class="sw dash"></i>Should be</p>
+              <div class="coach-bar"><i id="coachBar"></i></div>
+              <div class="coach-btns"><button type="button" id="coachBack">Back</button><button type="button" id="coachStop">Stop</button><button type="button" class="go" id="coachNext">Next</button></div>
+            </div>
             <div class="proc" id="proc" hidden>
               <div class="proc-row"><span id="procTxt">Loading tracker…</span><button id="procCancel">Cancel</button></div>
               <div class="bar"><i id="procBar"></i></div>
@@ -402,6 +431,7 @@ i.dot.good { background: var(--good); } i.dot.watch { background: var(--watch); 
               <button class="tool" id="zoomFollow" type="button" aria-pressed="false">Zoom</button>
               <button class="tool" id="batFix" type="button" aria-pressed="false" hidden>Fix bat</button>
               <button class="tool" id="layersBtn" type="button" aria-expanded="false" aria-controls="layerPanel">Layers</button>
+              <button class="tool" id="coachBtn" type="button">Coach</button>
               <button class="tool" id="fsBtn" type="button" aria-label="Full screen"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
             </div>
             <div class="layer-panel" id="layerPanel" hidden>
